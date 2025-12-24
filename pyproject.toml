@@ -12,13 +12,9 @@ keywords = ["tts", "voice-cloning", "mlx", "chatterbox", "claude", "apple-silico
 dependencies = []
 
 [project.optional-dependencies]
-# MLX voice cloning on Apple Silicon
+# MLX voice cloning on Apple Silicon (for local dev/testing)
 mlx = [
-    "mlx-audio-plus>=0.1.6",
-    "soundfile>=0.12.1",
-    "sounddevice>=0.4.6",
-    "librosa>=0.10.0",
-    "huggingface-hub>=0.20.0",
+    "mlx-audio>=0.2.9",
 ]
 
 [tool.uv]

@@ -20,15 +20,11 @@ brew install uv        # or: curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 2. Install plugin
 claude plugin install aperepel/claude-mlx-tts
-
-# 3. Install MLX dependencies
-cd ~/.claude/plugins/marketplaces/claude-mlx-tts
-uv sync --extra mlx
 ```
 
 > [Full uv installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 
-That's it. Start a new Claude session and trigger deep work:
+That's it. Dependencies install automatically on first use. Start a new Claude session and trigger deep work:
 
 ```
 > think about what makes good API design
@@ -57,14 +53,14 @@ MLX_SPEED = 1.6             # Playback speed
 
 **No sound?**
 ```bash
-# Check MLX is installed
-cd ~/.claude/plugins/marketplaces/claude-mlx-tts
-uv run python -c "import mlx_audio; print('OK')"
+# Test MLX audio directly
+uv run --with mlx-audio python -c "import mlx_audio; print('OK')"
 ```
 
 **Model download issues?**
 ```bash
-hf download mlx-community/chatterbox-turbo-fp16
+# Pre-download the model (~4GB)
+uv run --with huggingface-hub python -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/chatterbox-turbo-fp16')"
 ```
 
 ## Requirements

@@ -54,8 +54,7 @@ ffmpeg -i input.m4a -ar 24000 -ac 1 -t 20 voice_ref.wav
 Replace the bundled voice with your recording:
 
 ```bash
-cd ~/.claude/plugins/marketplaces/claude-mlx-tts
-cp /path/to/your/voice_ref.wav assets/default_voice.wav
+cp /path/to/your/voice_ref.wav ~/.claude/plugins/marketplaces/claude-mlx-tts/assets/default_voice.wav
 ```
 
 ## Model Options
