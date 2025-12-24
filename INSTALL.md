@@ -1,5 +1,12 @@
 # Installation Guide
 
+## Overview
+
+This plugin detects "deep work" sessions by measuring the full duration from your input to Claude's final response—including all tool calls and intermediate steps. It only speaks when:
+- Response took 15+ seconds end-to-end
+- 2+ tool calls were made
+- You used thinking keywords (`think`, `ultrathink`)
+
 ## Step 1: Install the Plugin
 
 ```bash
@@ -15,7 +22,9 @@ uv sync --extra mlx
 
 > **Note:** If you don't have `uv`, install it first: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-## Step 3: Create Your Voice Reference
+## Step 3: Create a Voice Reference
+
+Clone any voice—your own, a colleague, a character, or any speaker you like.
 
 Create the config directory:
 

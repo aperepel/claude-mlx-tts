@@ -2,7 +2,7 @@
 
 Voice-cloned TTS notifications for Claude Code using [Chatterbox Turbo](https://www.resemble.ai/chatterbox/) on Apple Silicon.
 
-When Claude finishes deep work, hear a brief summary in your own cloned voice—so you know it's ready without watching the screen.
+When Claude finishes deep work, hear a brief summary in a cloned voice—so you know it's ready without watching the screen.
 
 ## Features
 
