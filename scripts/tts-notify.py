@@ -57,6 +57,18 @@ def get_hook_input():
         return {}
 
 
+def is_real_user_message(entry: dict) -> bool:
+    """Check if entry is a real human message (not a tool_result)."""
+    if entry.get("type") != "user":
+        return False
+    content = entry.get("message", {}).get("content", "")
+    # Tool results are stored as list of dicts with type "tool_result"
+    if isinstance(content, list):
+        if all(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+            return False
+    return True
+
+
 def should_trigger_tts(transcript_path: str) -> tuple[bool, str, int, float, bool]:
     """Check if TTS should trigger. Returns (should_trigger, last_message, tool_count, duration, thinking)."""
     entries = []
@@ -73,10 +85,10 @@ def should_trigger_tts(transcript_path: str) -> tuple[bool, str, int, float, boo
     if not entries:
         return False, "", 0, 0.0, False
 
-    # Find last user message (start of current turn)
+    # Find last REAL user message (not tool_result) - start of current turn
     last_user_idx = -1
     for i in range(len(entries) - 1, -1, -1):
-        if entries[i].get("type") == "user":
+        if is_real_user_message(entries[i]):
             last_user_idx = i
             break
 
