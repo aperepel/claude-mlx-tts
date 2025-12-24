@@ -10,6 +10,7 @@ Triggers when:
 Uses macOS 'say' by default. Install MLX extra for voice cloning: uv sync --extra mlx
 """
 import json
+import re
 import subprocess
 import os
 import sys
@@ -190,8 +191,10 @@ def summarize(text: str) -> str:
 
 def speak_say(message: str):
     """Speak using macOS say command."""
+    # Strip paralinguistic tags like [clear throat], [laugh], etc. - only work with MLX
+    clean_message = re.sub(r'\[[\w\s]+\]\s*', '', message)
     subprocess.Popen(
-        ["say", "-v", SAY_VOICE, "-r", str(SAY_RATE), message],
+        ["say", "-v", SAY_VOICE, "-r", str(SAY_RATE), clean_message],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
