@@ -32,11 +32,10 @@ SAY_RATE = 180              # Words per minute
 # Attention prefix (heads-up before content)
 ATTENTION_PREFIX = "[clear throat] Attention on deck."
 
-# MLX Voice Cloning (auto-enabled when voice reference exists)
-# Model ID from HuggingFace - downloads automatically on first use (~4GB for fp16)
+# MLX Voice Cloning (auto-enabled when MLX installed)
 MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"
-# Voice reference: 10-20 second WAV of your voice (or any voice to clone)
-MLX_VOICE_REF = "~/.config/claude-tts/voice_ref.wav"
+# Voice reference: bundled in assets/, replace with your own if desired
+MLX_VOICE_REF = os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
 MLX_SPEED = 1.6
 
 # =============================================================================
@@ -47,8 +46,7 @@ def is_mlx_available() -> bool:
     """Check if MLX audio is installed and voice reference exists."""
     try:
         import mlx_audio  # noqa: F401
-        voice_ref = os.path.expanduser(MLX_VOICE_REF)
-        return os.path.exists(voice_ref)
+        return os.path.exists(MLX_VOICE_REF)
     except ImportError:
         return False
 
@@ -214,7 +212,7 @@ def speak_mlx(message: str):
                 sys.executable, "-m", "mlx_audio.tts.generate",
                 "--model", MLX_MODEL,
                 "--text", message,
-                "--ref_audio", os.path.expanduser(MLX_VOICE_REF),
+                "--ref_audio", MLX_VOICE_REF,
                 "--ref_text", ".",
                 "--speed", str(MLX_SPEED),
                 "--file_prefix", os.path.join(output_dir, "notification"),

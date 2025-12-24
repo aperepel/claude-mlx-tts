@@ -11,7 +11,7 @@
     {
       "name": "claude-mlx-tts",
       "source": "./",
-      "description": "Speaks a voice-cloned summary when Claude finishes deep work. Uses MLX Chatterbox Turbo to clone any voice from a 20-second sample. Triggers on long responses, multiple tool calls, or thinking mode.",
+      "description": "Speaks a voice-cloned summary when Claude finishes deep work. Works out of the box with bundled voice, or clone your own. Triggers on long responses, multiple tool calls, or thinking mode.",
       "version": "1.1.0",
       "author": {
         "name": "aperepel"
