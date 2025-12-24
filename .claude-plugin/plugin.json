@@ -1,0 +1,9 @@
+{
+  "name": "summary-tts",
+  "description": "Speaks a TTS summary when Claude finishes deep work. Uses macOS 'say' by default with optional MLX voice cloning.",
+  "version": "1.0.0",
+  "author": {
+    "name": "aperepel"
+  },
+  "keywords": ["tts", "summary", "notification", "voice", "macos", "accessibility"]
+}
