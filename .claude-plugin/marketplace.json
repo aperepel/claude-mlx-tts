@@ -1,0 +1,26 @@
+{
+  "name": "claude-mlx-tts",
+  "owner": {
+    "name": "aperepel"
+  },
+  "metadata": {
+    "description": "Voice-cloned TTS summaries for Claude Code deep work sessions",
+    "version": "1.1.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-mlx-tts",
+      "source": ".",
+      "description": "Speaks a voice-cloned summary when Claude finishes deep work. Uses MLX Chatterbox Turbo to clone your voice from a 20-second sample. Triggers on long responses, multiple tool calls, or thinking mode.",
+      "version": "1.1.0",
+      "author": {
+        "name": "aperepel"
+      },
+      "license": "MIT",
+      "homepage": "https://github.com/aperepel/claude-mlx-tts",
+      "repository": "https://github.com/aperepel/claude-mlx-tts",
+      "keywords": ["tts", "voice-cloning", "mlx", "chatterbox", "apple-silicon", "notification", "summarization"],
+      "category": "productivity"
+    }
+  ]
+}
