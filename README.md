@@ -69,17 +69,34 @@ pip install ".[mlx]"
 
 ### 2. Create a voice reference
 
-Record a 10-20 second WAV file of clear speech (your voice or any voice to clone):
+Record a voice sample for cloning. Requirements:
+
+| Requirement | Specification |
+|-------------|---------------|
+| **Duration** | 10-20 seconds of speech |
+| **Format** | WAV (not MP3/M4A/AAC) |
+| **Sample rate** | 24kHz or higher |
+| **Channels** | Mono preferred (stereo auto-converted) |
+| **Content** | Single speaker only |
+| **Environment** | No background noise, music, or room reverb |
+| **Speech** | Clear articulation, natural pace |
 
 ```bash
 # Create config directory
 mkdir -p ~/.config/claude-tts
 
-# Record using macOS (press Ctrl+C to stop)
-rec ~/.config/claude-tts/voice_ref.wav trim 0 20
+# Record using sox (install: brew install sox)
+rec -r 24000 -c 1 ~/.config/claude-tts/voice_ref.wav trim 0 20
+
+# Or using ffmpeg from existing audio
+ffmpeg -i input.m4a -ar 24000 -ac 1 -t 20 ~/.config/claude-tts/voice_ref.wav
 ```
 
-Or use QuickTime Player, Voice Memos, or any audio tool. Save as WAV format.
+**Tips for best results:**
+- Read a paragraph naturally, as if explaining something to a colleague
+- Avoid whispering, shouting, or exaggerated emotions
+- Record in a quiet room (closets work great for dampening echo)
+- If converting from Voice Memos, use the ffmpeg command above
 
 ### 3. First run downloads the model
 
