@@ -28,6 +28,9 @@ THINKING_KEYWORDS = ["ultrathink", "think harder", "think hard", "think"]
 SAY_VOICE = "Daniel"        # Try: say -v ? to list voices
 SAY_RATE = 180              # Words per minute
 
+# Attention prefix (heads-up before content)
+ATTENTION_PREFIX = "[clear throat] Attention on deck."
+
 # MLX Voice Cloning (auto-enabled when voice reference exists)
 # Model ID from HuggingFace - downloads automatically on first use (~4GB for fp16)
 MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"
@@ -244,7 +247,8 @@ def main():
         return
 
     summary = summarize(last_message)
-    speak(summary)
+    message = f"{ATTENTION_PREFIX} ... {summary}"
+    speak(message)
 
 
 if __name__ == "__main__":
