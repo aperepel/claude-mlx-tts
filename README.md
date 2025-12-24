@@ -94,9 +94,36 @@ MLX_VOICE_REF = "~/.config/claude-tts/voice_ref.wav"
 MLX_SPEED = 1.6
 ```
 
-Alternative models (smaller/faster):
-- `mlx-community/chatterbox-turbo-4bit` (~500MB, fastest)
-- `mlx-community/chatterbox-turbo-8bit` (~1GB, balanced)
+### Choosing a Different Model
+
+Available quantizations (trade-off: size/speed vs quality):
+
+| Model | Size | Quality | Use Case |
+|-------|------|---------|----------|
+| `chatterbox-turbo-fp16` | ~4GB | Best | Default, highest fidelity |
+| `chatterbox-turbo-8bit` | ~1GB | Great | Balanced size/quality |
+| `chatterbox-turbo-6bit` | ~750MB | Good | Smaller footprint |
+| `chatterbox-turbo-5bit` | ~600MB | Good | Even smaller |
+| `chatterbox-turbo-4bit` | ~500MB | Acceptable | Fastest, smallest |
+
+To switch models, edit `scripts/tts-notify.py`:
+
+```python
+MLX_MODEL = "mlx-community/chatterbox-turbo-8bit"  # Change to desired variant
+```
+
+The new model downloads automatically on next TTS playback. To pre-download or clear old models:
+
+```bash
+# Pre-download a specific model
+huggingface-cli download mlx-community/chatterbox-turbo-8bit
+
+# Clear HuggingFace cache (removes all cached models)
+rm -rf ~/.cache/huggingface/hub/models--mlx-community--chatterbox-turbo-*
+
+# Or selectively remove one model
+rm -rf ~/.cache/huggingface/hub/models--mlx-community--chatterbox-turbo-fp16
+```
 
 ## How It Works
 
