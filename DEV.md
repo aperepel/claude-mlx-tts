@@ -16,18 +16,15 @@ claude plugin uninstall claude-mlx-tts
 
 ## Run from Local Checkout
 
-Use `--plugin-dir` to load the plugin from your local directory:
-
-```bash
-claude --plugin-dir /path/to/claude-mlx-tts
-```
-
-Or use a relative path from the repo:
+Capture the checkout directory and use it to start Claude:
 
 ```bash
 cd claude-mlx-tts
-claude --plugin-dir .
+PLUGIN_DIR=$(pwd)
+claude --plugin-dir "$PLUGIN_DIR"
 ```
+
+This ensures the plugin loads from your local checkout regardless of where you run Claude from later.
 
 ## Iteration Workflow
 

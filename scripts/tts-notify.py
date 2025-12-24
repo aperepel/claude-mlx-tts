@@ -10,11 +10,30 @@ Triggers when:
 Uses macOS 'say' by default. Install MLX extra for voice cloning: uv sync --extra mlx
 """
 import json
+import logging
 import re
 import subprocess
 import os
 import sys
 from datetime import datetime
+
+# =============================================================================
+# LOGGING SETUP
+# =============================================================================
+
+LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
+LOG_FILE = os.path.join(LOG_DIR, "tts-notify.log")
+
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+    ]
+)
+log = logging.getLogger(__name__)
 
 # =============================================================================
 # CONFIGURATION - Edit these to customize behavior
@@ -46,8 +65,11 @@ def is_mlx_available() -> bool:
     """Check if MLX audio is installed and voice reference exists."""
     try:
         import mlx_audio  # noqa: F401
-        return os.path.exists(MLX_VOICE_REF)
+        available = os.path.exists(MLX_VOICE_REF)
+        log.debug(f"MLX available: {available}, voice ref exists: {os.path.exists(MLX_VOICE_REF)}")
+        return available
     except ImportError:
+        log.debug("MLX not available: mlx_audio not installed")
         return False
 
 
@@ -189,7 +211,7 @@ def summarize(text: str) -> str:
 
 def speak_say(message: str):
     """Speak using macOS say command."""
-    # Strip paralinguistic tags like [clear throat], [laugh], etc. - only work with MLX
+    log.debug(f"Using macOS say (voice={SAY_VOICE}, rate={SAY_RATE})")
     clean_message = re.sub(r'\[[\w\s]+\]\s*', '', message)
     subprocess.Popen(
         ["say", "-v", SAY_VOICE, "-r", str(SAY_RATE), clean_message],
@@ -200,6 +222,7 @@ def speak_say(message: str):
 
 def speak_mlx(message: str):
     """Speak using MLX voice cloning."""
+    log.debug(f"Using MLX TTS (model={MLX_MODEL}, speed={MLX_SPEED})")
     output_dir = "/tmp/claude-tts"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -223,7 +246,9 @@ def speak_mlx(message: str):
             stderr=subprocess.DEVNULL,
             timeout=60
         )
-    except Exception:
+        log.debug("MLX TTS completed successfully")
+    except Exception as e:
+        log.warning(f"MLX TTS failed: {e}, falling back to macOS say")
         speak_say(message)
 
 
@@ -236,20 +261,29 @@ def speak(message: str):
 
 
 def main():
+    log.info("Hook invoked")
     hook_input = get_hook_input()
     transcript_path = hook_input.get("transcript_path", "")
 
     if not transcript_path:
+        log.warning("No transcript_path in hook input")
         return
 
+    log.debug(f"Transcript: {transcript_path}")
     should_trigger, last_message, tool_count, duration, thinking = should_trigger_tts(transcript_path)
 
+    log.info(f"Threshold check: trigger={should_trigger}, duration={duration:.1f}s, tools={tool_count}, thinking={thinking}")
+
     if not should_trigger or not last_message:
+        log.debug("Not triggering TTS")
         return
 
+    log.info("Generating summary...")
     summary = summarize(last_message)
     message = f"{ATTENTION_PREFIX} ... {summary}"
+    log.info(f"Speaking: {message[:100]}...")
     speak(message)
+    log.info("TTS complete")
 
 
 if __name__ == "__main__":
