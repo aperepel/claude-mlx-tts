@@ -7,7 +7,7 @@ Triggers when:
 - OR >= MIN_TOOL_CALLS tool calls were made
 - OR user message contained thinking keywords (think/ultrathink)
 
-Uses macOS 'say' by default. See README for MLX voice cloning setup.
+Uses macOS 'say' by default. Install MLX extra for voice cloning: uv sync --extra mlx
 """
 import json
 import subprocess
@@ -28,14 +28,26 @@ THINKING_KEYWORDS = ["ultrathink", "think harder", "think hard", "think"]
 SAY_VOICE = "Daniel"        # Try: say -v ? to list voices
 SAY_RATE = 180              # Words per minute
 
-# MLX Voice Cloning (optional - set paths to enable)
-MLX_MODEL_PATH = ""         # e.g., "~/.lmstudio/models/mlx-community/chatterbox-turbo-fp16"
-MLX_VOICE_REF = ""          # e.g., "~/.claude/hooks/voice_ref.wav"
+# MLX Voice Cloning (auto-enabled when voice reference exists)
+# Model ID from HuggingFace - downloads automatically on first use (~4GB for fp16)
+MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"
+# Voice reference: 10-20 second WAV of your voice (or any voice to clone)
+MLX_VOICE_REF = "~/.config/claude-tts/voice_ref.wav"
 MLX_SPEED = 1.6
 
 # =============================================================================
 # IMPLEMENTATION
 # =============================================================================
+
+def is_mlx_available() -> bool:
+    """Check if MLX audio is installed and voice reference exists."""
+    try:
+        import mlx_audio  # noqa: F401
+        voice_ref = os.path.expanduser(MLX_VOICE_REF)
+        return os.path.exists(voice_ref)
+    except ImportError:
+        return False
+
 
 def get_hook_input():
     """Read hook input from stdin."""
@@ -182,7 +194,7 @@ def speak_mlx(message: str):
         subprocess.run(
             [
                 sys.executable, "-m", "mlx_audio.tts.generate",
-                "--model", os.path.expanduser(MLX_MODEL_PATH),
+                "--model", MLX_MODEL,
                 "--text", message,
                 "--ref_audio", os.path.expanduser(MLX_VOICE_REF),
                 "--ref_text", ".",
@@ -201,7 +213,7 @@ def speak_mlx(message: str):
 
 def speak(message: str):
     """Speak message using configured TTS."""
-    if MLX_MODEL_PATH and MLX_VOICE_REF:
+    if is_mlx_available():
         speak_mlx(message)
     else:
         speak_say(message)

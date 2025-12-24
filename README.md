@@ -9,7 +9,7 @@ When Claude completes a task that took significant effort, this plugin speaks a 
 - **Smart triggers** - Only notifies on deep work (long responses, multiple tool calls, or thinking mode)
 - **Concise summaries** - Uses Claude to generate 10-15 word spoken summaries
 - **Zero dependencies** - Uses macOS `say` command by default
-- **Optional voice cloning** - Upgrade to MLX for custom voice synthesis
+- **Optional voice cloning** - Upgrade to MLX Chatterbox for custom voice synthesis
 
 ## Requirements
 
@@ -19,7 +19,7 @@ When Claude completes a task that took significant effort, this plugin speaks a 
 ## Installation
 
 ```bash
-/plugin install github:aperepel/claude-summary-tts
+claude plugin install aperepel/claude-summary-tts
 ```
 
 Or for local development:
@@ -52,26 +52,51 @@ Quick responses and simple queries stay silent.
 
 ## Optional: MLX Voice Cloning
 
-For custom voice synthesis on Apple Silicon:
+For custom voice synthesis on Apple Silicon using [Chatterbox](https://www.resemble.ai/chatterbox/) (MIT licensed):
 
-1. Install dependencies:
+### 1. Install MLX dependencies
+
 ```bash
-pip install mlx-audio soundfile sounddevice librosa
+# Navigate to plugin directory
+cd ~/.claude/plugins/summary-tts  # or your local dev path
+
+# Install with uv (recommended)
+uv sync --extra mlx
+
+# Or with pip
+pip install ".[mlx]"
 ```
 
-2. Download a model (e.g., via LM Studio):
-```
-mlx-community/chatterbox-turbo-fp16
+### 2. Create a voice reference
+
+Record a 10-20 second WAV file of clear speech (your voice or any voice to clone):
+
+```bash
+# Create config directory
+mkdir -p ~/.config/claude-tts
+
+# Record using macOS (press Ctrl+C to stop)
+rec ~/.config/claude-tts/voice_ref.wav trim 0 20
 ```
 
-3. Create a 10-20 second voice reference WAV file
+Or use QuickTime Player, Voice Memos, or any audio tool. Save as WAV format.
 
-4. Edit `scripts/tts-notify.py`:
+### 3. First run downloads the model
+
+The Chatterbox model (~4GB for fp16) downloads automatically on first use from HuggingFace. No manual download required.
+
+### Configuration
+
 ```python
-MLX_MODEL_PATH = "~/.lmstudio/models/mlx-community/chatterbox-turbo-fp16"
-MLX_VOICE_REF = "~/.claude/hooks/voice_ref.wav"
+# In scripts/tts-notify.py
+MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"  # Model ID (auto-downloads)
+MLX_VOICE_REF = "~/.config/claude-tts/voice_ref.wav"
 MLX_SPEED = 1.6
 ```
+
+Alternative models (smaller/faster):
+- `mlx-community/chatterbox-turbo-4bit` (~500MB, fastest)
+- `mlx-community/chatterbox-turbo-8bit` (~1GB, balanced)
 
 ## How It Works
 
@@ -90,8 +115,13 @@ MLX_SPEED = 1.6
 - Adjust `MIN_DURATION_SECS` and `MIN_TOOL_CALLS` thresholds
 
 **MLX not working?**
-- Ensure model path and voice ref are correct
+- Verify voice reference exists: `ls ~/.config/claude-tts/voice_ref.wav`
+- Check MLX is installed: `python -c "import mlx_audio"`
 - Falls back to `say` automatically on error
+
+**Model download issues?**
+- Check HuggingFace connectivity
+- Manual download: `huggingface-cli download mlx-community/chatterbox-turbo-fp16`
 
 ## License
 

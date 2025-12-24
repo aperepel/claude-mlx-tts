@@ -12,22 +12,25 @@ Claude Summary TTS is a Claude Code plugin that provides text-to-speech notifica
 - **Single script**: `scripts/tts-notify.py` contains all logic - threshold checks, summarization, and TTS playback
 - **Hook type**: Registers as a "Stop" hook that fires when Claude finishes responding
 - **Summarization**: Calls `claude -p` subprocess to generate brief spoken summaries
+- **MLX auto-detection**: Checks if `mlx_audio` is importable and voice reference exists
 
-## Running/Testing
+## Development Commands
 
-Test the TTS script manually (requires JSON input on stdin):
 ```bash
-echo '{"transcript_path": "/path/to/transcript.jsonl"}' | python3 scripts/tts-notify.py
-```
-
-Test macOS say command:
-```bash
-say -v Daniel -r 180 "Test message"
-```
-
-Install plugin locally for development:
-```bash
+# Install plugin locally for development
 claude --plugin-dir ~/projects/claude-summary-tts
+
+# Install MLX optional dependencies
+uv sync --extra mlx
+
+# Test TTS script manually (requires JSON input on stdin)
+echo '{"transcript_path": "/path/to/transcript.jsonl"}' | python3 scripts/tts-notify.py
+
+# Test macOS say command
+say -v Daniel -r 180 "Test message"
+
+# Pre-download MLX model (~4GB for fp16) - optional, auto-downloads on first use
+uv run python -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/chatterbox-turbo-fp16')"
 ```
 
 ## Key Configuration (in scripts/tts-notify.py)
@@ -36,4 +39,5 @@ claude --plugin-dir ~/projects/claude-summary-tts
 - `MIN_TOOL_CALLS`: Tool call count threshold (default 2)
 - `THINKING_KEYWORDS`: Keywords that trigger TTS regardless of duration
 - `SAY_VOICE` / `SAY_RATE`: macOS voice settings
-- `MLX_MODEL_PATH` / `MLX_VOICE_REF`: Optional MLX voice cloning paths
+- `MLX_MODEL`: HuggingFace model ID (auto-downloads on first use)
+- `MLX_VOICE_REF`: Path to voice reference WAV file
