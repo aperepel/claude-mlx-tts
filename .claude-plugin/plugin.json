@@ -1,9 +1,9 @@
 {
-  "name": "summary-tts",
-  "description": "Speaks a TTS summary when Claude finishes deep work. Uses macOS 'say' by default with optional MLX voice cloning.",
-  "version": "1.0.0",
+  "name": "claude-mlx-tts",
+  "description": "Voice-cloned TTS notifications using MLX Chatterbox Turbo. Hear Claude's summaries in your own voice.",
+  "version": "1.1.0",
   "author": {
     "name": "aperepel"
   },
-  "keywords": ["tts", "summary", "notification", "voice", "macos", "accessibility"]
+  "keywords": ["tts", "voice-cloning", "mlx", "chatterbox", "apple-silicon", "notification"]
 }
