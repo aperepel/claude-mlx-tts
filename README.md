@@ -15,13 +15,18 @@ When Claude finishes deep work, hear a brief AI-generated summary spoken aloudâ€
 ## Quick Start
 
 ```bash
-# 1. Install plugin
+# 1. Install uv (if needed)
+brew install uv        # or: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Install plugin
 claude plugin install aperepel/claude-mlx-tts
 
-# 2. Install MLX dependencies
+# 3. Install MLX dependencies
 cd ~/.claude/plugins/marketplaces/claude-mlx-tts
 uv sync --extra mlx
 ```
+
+> [Full uv installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 
 That's it. Start a new Claude session and trigger deep work:
 
