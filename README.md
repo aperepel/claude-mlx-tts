@@ -6,10 +6,10 @@ When Claude finishes deep work, hear a brief summary in a cloned voice—so you 
 
 ## Features
 
+- **AI-powered summaries** - Condenses Claude's response into a 10-15 word spoken update
+- **Attention grabber** - "[clear throat] Attention on deck..." before each summary
 - **Voice cloning** - Clone any voice from a 10-20 second sample using MLX Chatterbox Turbo
-- **Paralinguistic tags** - Natural expressions like `[clear throat]`, `[laugh]`, `[sigh]`
-- **Smart triggers** - Only notifies on deep work (long responses, multiple tool calls, or thinking mode)
-- **Attention prefix** - "Attention on deck" heads-up before the summary
+- **Smart detection** - Only triggers on deep work (15+ seconds, 2+ tool calls, or thinking mode)
 - **Fallback** - Uses macOS `say` if MLX not configured
 
 ## Requirements
@@ -25,7 +25,7 @@ When Claude finishes deep work, hear a brief summary in a cloned voice—so you 
 claude plugin install aperepel/claude-mlx-tts
 
 # Navigate to plugin directory and install MLX dependencies
-cd ~/.claude/plugins/claude-mlx-tts
+cd ~/.claude/plugins/marketplaces/claude-mlx-tts
 uv sync --extra mlx
 ```
 

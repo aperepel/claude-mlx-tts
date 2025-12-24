@@ -2,7 +2,12 @@
 
 ## Overview
 
-This plugin detects "deep work" sessions by measuring the full duration from your input to Claude's final response—including all tool calls and intermediate steps. It only speaks when:
+When Claude finishes deep work, this plugin:
+1. **Summarizes** the response into a brief 10-15 word update using AI
+2. **Announces** with an attention grabber: "[clear throat] Attention on deck..."
+3. **Speaks** the summary in a cloned voice so you know what happened
+
+Deep work is detected by measuring from your input to Claude's final response. Triggers when:
 - Response took 15+ seconds end-to-end
 - 2+ tool calls were made
 - You used thinking keywords (`think`, `ultrathink`)
@@ -16,7 +21,7 @@ claude plugin install aperepel/claude-mlx-tts
 ## Step 2: Install MLX Dependencies
 
 ```bash
-cd ~/.claude/plugins/claude-mlx-tts
+cd ~/.claude/plugins/marketplaces/claude-mlx-tts
 uv sync --extra mlx
 ```
 
