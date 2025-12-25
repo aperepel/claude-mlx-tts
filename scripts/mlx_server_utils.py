@@ -44,7 +44,6 @@ log = logging.getLogger(__name__)
 
 TTS_SERVER_PORT = int(os.environ.get("TTS_SERVER_PORT", "21099"))
 TTS_SERVER_HOST = os.environ.get("TTS_SERVER_HOST", "localhost")
-TTS_IDLE_TIMEOUT = int(os.environ.get("TTS_IDLE_TIMEOUT", "3600"))  # 60 min default
 TTS_START_TIMEOUT = int(os.environ.get("TTS_START_TIMEOUT", "60"))  # 60s for cold start
 
 # Server log file

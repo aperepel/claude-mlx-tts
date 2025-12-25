@@ -3,7 +3,7 @@
 # Usage: ./tts-start.sh
 #
 # Pre-warms the mlx_audio.server so TTS requests complete in <1s.
-# Server runs on port 21099 and auto-shuts down after 15 min idle.
+# Server runs on port 21099 until manually stopped with /tts-stop.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -29,7 +29,7 @@ else:
     try:
         ensure_server_running()
         print(f\"TTS server started on port {get_server_status()['port']}\")
-        print('Server will auto-shutdown after 15 min idle.')
+        print('Run /tts-stop to reclaim GPU memory when done.')
     except ServerStartError as e:
         print(f'Failed to start server: {e}')
         sys.exit(1)
