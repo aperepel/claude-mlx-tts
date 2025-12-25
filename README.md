@@ -4,6 +4,12 @@ Voice-cloned TTS notifications for Claude Code using [Chatterbox Turbo](https://
 
 When Claude finishes deep work, hear a brief AI-generated summary spoken aloud—so you know it's ready without watching the screen.
 
+## Demo
+
+[![Watch the demo](https://img.youtube.com/vi/0K0UmI2knRI/maxresdefault.jpg)](https://www.youtube.com/watch?v=0K0UmI2knRI)
+
+*Click to watch the plugin in action*
+
 ## Features
 
 - **AI-powered summaries** - Condenses Claude's response into a 10-15 word spoken update
