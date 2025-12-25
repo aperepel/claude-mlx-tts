@@ -26,8 +26,12 @@ beads.left.meta.json
 beads.right.jsonl
 beads.right.meta.json
 
-# Keep JSONL exports and config (source of truth for git)
-!issues.jsonl
-!interactions.jsonl
-!metadata.json
+# JSONL files tracked on beads-sync branch only (via worktree)
+# Do NOT track on main - bd sync handles this
+issues.jsonl
+interactions.jsonl
+metadata.json
+
+# Config can stay on main (optional)
+!config.yaml
 !config.json
