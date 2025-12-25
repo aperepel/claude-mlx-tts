@@ -38,14 +38,21 @@ claude plugin install claude-mlx-tts
 
 ### Enable Voice Cloning (MLX on Apple Silicon)
 
-After installation, optionally enable MLX voice cloning:
+After installation, enable MLX voice cloning:
 
 ```bash
 # Install uv (if needed)
 brew install uv        # or: curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Then in a Claude Code session, run `/tts-init` to install dependencies and download the model.
+Then in a Claude Code session:
+
+```bash
+/tts-init   # Install dependencies and download model (one-time, ~4GB)
+/tts-start  # Start the TTS server (recommended)
+```
+
+**Why `/tts-start`?** Pre-warms the model in GPU memory for fast responses. Without it, each TTS request cold-loads the model (~10s delay). See [ARCHITECTURE.md](ARCHITECTURE.md) for the full backend fallback chain.
 
 > **Note:** The default fp16 model is ~4GB and may take a while to download. See [Model Options](#model-options) for smaller quantized alternatives.
 
@@ -61,10 +68,10 @@ Then in a Claude Code session, run `/tts-init` to install dependencies and downl
 
 ### Test It
 
-Quick smoke test:
+Verify the install with a smoke test:
 
 ```
-/say Hello world
+/claude-mlx-tts:say Everything checks out and seems to be working. Great job!
 ```
 
 Or trigger deep work to hear an automatic summary:
