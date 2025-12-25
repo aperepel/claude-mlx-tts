@@ -1,5 +1,5 @@
 ---
-description: Start the MLX TTS server (pre-warms model for <1s responses)
+description: Start the MLX TTS server (pre-warms model for faster responses)
 ---
 
 Run this command to start the TTS server:

@@ -25,6 +25,11 @@
     ]
   },
   "skills": {
+    "tts-init": {
+      "description": "Install MLX dependencies and download model (~4GB)",
+      "instruction": "Install MLX voice cloning dependencies and download the model",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-init.sh"
+    },
     "tts-start": {
       "description": "Start TTS server to keep model warm",
       "instruction": "Start the TTS background server",

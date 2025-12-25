@@ -2,7 +2,7 @@
 # Start the TTS server to keep the model warm
 # Usage: ./tts-start.sh
 #
-# Pre-warms the mlx_audio.server so TTS requests complete in <1s.
+# Pre-warms the mlx_audio.server for faster TTS responses.
 # Server runs on port 21099 until manually stopped with /tts-stop.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -30,14 +30,29 @@ brew install uv        # or: curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 2. Install plugin
 claude plugin install aperepel/claude-mlx-tts
-
-# 3. Install MLX dependencies
-cd ~/.claude/plugins/claude-mlx-tts && uv sync --extra mlx
 ```
 
-The MLX model (~4GB) downloads automatically on first use.
+Then in a Claude Code session, run `/tts-init` to install dependencies and download the model (~4GB).
 
 > [Full uv installation guide](https://docs.astral.sh/uv/getting-started/installation/)
+
+### Installing During a Session
+
+Already in a Claude Code session? Use the `/plugin` command:
+
+```
+/plugin
+```
+
+This opens an interactive browser where you can search for and install plugins without leaving your session. Search for "mlx-tts" and select install.
+
+For direct installation:
+
+```
+/plugin install aperepel/claude-mlx-tts
+```
+
+After installation, the plugin is active immediately—no restart required.
 
 ### Test It
 
@@ -53,13 +68,12 @@ Want to use your own voice? See [RECORDING.md](RECORDING.md) for instructions on
 
 Replace `assets/default_voice.wav` with your recording.
 
-## Server Commands
-
-The plugin includes slash commands for managing the MLX TTS server:
+## Commands
 
 | Command | Description |
 |---------|-------------|
-| `/tts-start` | Start server (pre-warms model for <1s responses) |
+| `/tts-init` | Install MLX dependencies and download model (~4GB) |
+| `/tts-start` | Start server (pre-warms model for faster responses) |
 | `/tts-stop` | Stop server (reclaims ~4GB GPU memory) |
 | `/tts-status` | Check if server is running |
 
