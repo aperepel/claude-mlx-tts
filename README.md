@@ -14,51 +14,49 @@ When Claude finishes deep work, hear a brief AI-generated summary spoken aloudâ€
 
 ## Quick Start
 
-### Basic Install (macOS `say`)
+### Install
+
+First, add this repo as a plugin marketplace:
 
 ```bash
-claude plugin install aperepel/claude-mlx-tts
+# From terminal
+claude plugin marketplace add aperepel/claude-mlx-tts
+
+# Or from within a Claude Code session
+/plugin marketplace add aperepel/claude-mlx-tts
 ```
 
-Works immediately with zero dependencies. Uses the built-in macOS `say` command.
-
-### Voice Cloning (MLX on Apple Silicon)
+Then install the plugin:
 
 ```bash
-# 1. Install uv (if needed)
+# From terminal
+claude plugin install claude-mlx-tts
+
+# Or from within a Claude Code session
+/plugin install claude-mlx-tts
+```
+
+### Enable Voice Cloning (MLX on Apple Silicon)
+
+After installation, optionally enable MLX voice cloning:
+
+```bash
+# Install uv (if needed)
 brew install uv        # or: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. Install plugin
-claude plugin install aperepel/claude-mlx-tts
 ```
 
-Then in a Claude Code session, run `/tts-init` to install dependencies and download the model (~4GB).
+Then in a Claude Code session, run `/tts-init` to install dependencies and download the model.
+
+> **Note:** The default fp16 model is ~4GB and may take a while to download. See [Model Options](#model-options) for smaller quantized alternatives.
 
 > [Full uv installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 
-### Installing During a Session
+### Marketplace Management
 
-Already in a Claude Code session? Use the `/plugin` command:
-
-```
-/plugin
-```
-
-This opens an interactive browser where you can search for and install plugins without leaving your session. Search for `mlx-tts` and select install.
-
-For direct installation:
-
-```
-/plugin install aperepel/claude-mlx-tts
-```
-
-After installation, the plugin is active immediatelyâ€”no restart required.
-
-For MLX voice cloning, install dependencies and start the server (pre-warms the model for faster responses):
-
-```
-/tts-init
-/tts-start
+```bash
+/plugin marketplace list                  # View all marketplaces
+/plugin marketplace update claude-mlx-tts # Refresh plugins
+/plugin marketplace remove claude-mlx-tts # Remove marketplace
 ```
 
 ### Test It
