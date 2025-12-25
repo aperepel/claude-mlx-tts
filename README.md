@@ -51,17 +51,7 @@ MLX_SPEED = 1.6             # Playback speed
 
 ## Troubleshooting
 
-**No sound?**
-```bash
-# Test MLX audio directly
-uv run --with mlx-audio python -c "import mlx_audio; print('OK')"
-```
-
-**Model download issues?**
-```bash
-# Pre-download the model (~4GB)
-uv run --with huggingface-hub python -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/chatterbox-turbo-fp16')"
-```
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues.
 
 ## Requirements
 

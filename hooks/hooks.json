@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --with mlx-audio --with librosa --with mlx-lm --with einops --with sounddevice --isolated python ${CLAUDE_PLUGIN_ROOT}/scripts/tts-notify.py",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/run-tts.sh",
             "timeout": 60
           }
         ]

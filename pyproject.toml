@@ -15,10 +15,11 @@ dependencies = []
 # MLX voice cloning on Apple Silicon (for local dev/testing)
 mlx = [
     "mlx-audio>=0.2.9",
-    "librosa>=0.10",    # Required by chatterbox_turbo model
-    "mlx-lm>=0.22",     # Required for GPT2 cache in chatterbox_turbo
-    "einops>=0.8",      # Required by codec models
-    "sounddevice>=0.5", # Required for audio playback
+    "librosa>=0.10",     # Required by chatterbox_turbo model
+    "mlx-lm>=0.22",      # Required for GPT2 cache in chatterbox_turbo
+    "einops>=0.8",       # Required by codec models
+    "sounddevice>=0.5",  # Required for audio playback
+    "pyloudnorm>=0.1",   # Required for loudness normalization
 ]
 # Development dependencies
 dev = [
