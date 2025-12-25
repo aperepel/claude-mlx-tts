@@ -27,7 +27,7 @@ LOG_FILE = os.path.join(LOG_DIR, "tts-notify.log")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler(LOG_FILE),
@@ -52,9 +52,48 @@ SAY_RATE = 180              # Words per minute
 ATTENTION_PREFIX = "[clear throat] Attention on deck."
 
 # MLX Voice Cloning settings
+MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"
 MLX_SPEED = 1.6             # Speech speed multiplier (0.5-2.0)
 # Voice reference: bundled in assets/, replace with your own if desired
 MLX_VOICE_REF = os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
+
+# =============================================================================
+# MLX TTS CORE (inlined for hook isolation compatibility)
+# =============================================================================
+
+_cached_model = None
+
+
+def _get_mlx_model():
+    """Get cached MLX model, loading if necessary."""
+    global _cached_model
+    if _cached_model is None:
+        from mlx_audio.tts.utils import load_model
+        log.info(f"Loading MLX model: {MLX_MODEL}")
+        _cached_model = load_model(model_path=MLX_MODEL)
+        log.info("MLX model loaded")
+    return _cached_model
+
+
+def _generate_mlx_speech(text: str, play: bool = True):
+    """Generate speech using direct MLX API."""
+    if not text or not text.strip():
+        return
+
+    from mlx_audio.tts.generate import generate_audio
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+    model = _get_mlx_model()
+    generate_audio(
+        text=text,
+        model=model,
+        ref_audio=MLX_VOICE_REF,
+        ref_text=".",
+        speed=MLX_SPEED,
+        play=play,
+        verbose=False,
+    )
+
 
 # =============================================================================
 # IMPLEMENTATION
@@ -64,11 +103,8 @@ def is_mlx_available() -> bool:
     """Check if MLX audio is installed and voice reference exists."""
     try:
         import mlx_audio  # noqa: F401
-        available = os.path.exists(MLX_VOICE_REF)
-        log.debug(f"MLX available: {available}, voice ref exists: {os.path.exists(MLX_VOICE_REF)}")
-        return available
+        return os.path.exists(MLX_VOICE_REF)
     except ImportError:
-        log.debug("MLX not available: mlx_audio not installed")
         return False
 
 
@@ -210,7 +246,6 @@ def summarize(text: str) -> str:
 
 def speak_say(message: str):
     """Speak using macOS say command."""
-    log.debug(f"Using macOS say (voice={SAY_VOICE}, rate={SAY_RATE})")
     clean_message = re.sub(r'\[[\w\s]+\]\s*', '', message)
     subprocess.Popen(
         ["say", "-v", SAY_VOICE, "-r", str(SAY_RATE), clean_message],
@@ -222,10 +257,9 @@ def speak_say(message: str):
 def speak_mlx(message: str):
     """Speak using MLX voice cloning via direct API."""
     try:
-        from mlx_tts_core import speak_mlx as _speak_mlx
-        log.debug(f"Using MLX TTS (direct API, speed={MLX_SPEED})")
-        _speak_mlx(message, speed=MLX_SPEED, ref_audio=MLX_VOICE_REF)
-        log.debug("MLX TTS completed successfully")
+        log.info(f"MLX TTS: generating speech (speed={MLX_SPEED})")
+        _generate_mlx_speech(message, play=True)
+        log.info("MLX TTS: complete")
     except Exception as e:
         log.warning(f"MLX TTS failed: {e}, falling back to macOS say")
         speak_say(message)
@@ -248,13 +282,11 @@ def main():
         log.warning("No transcript_path in hook input")
         return
 
-    log.debug(f"Transcript: {transcript_path}")
     should_trigger, last_message, tool_count, duration, thinking = should_trigger_tts(transcript_path)
 
     log.info(f"Threshold check: trigger={should_trigger}, duration={duration:.1f}s, tools={tool_count}, thinking={thinking}")
 
     if not should_trigger or not last_message:
-        log.debug("Not triggering TTS")
         return
 
     log.info("Generating summary...")
