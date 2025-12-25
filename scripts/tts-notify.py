@@ -180,7 +180,27 @@ def should_trigger_tts(transcript_path: str) -> tuple[bool, str, int, float, boo
             str(b.get("content", b.get("text", "")))
             for b in user_content if isinstance(b, dict)
         )
-    user_text_lower = str(user_content).lower()
+    user_text_lower = str(user_content).lower().strip()
+
+    # Option A: Skip TTS if this turn ran a TTS script via Bash
+    # Check assistant tool calls for our script names (more reliable than parsing user message)
+    TTS_SCRIPTS = ["say.sh", "summary-say.sh", "tts-start.sh", "tts-stop.sh", "tts-status.sh", "tts-init.sh"]
+    for entry in entries[last_user_idx:]:
+        if entry.get("type") != "assistant":
+            continue
+        content = entry.get("message", {}).get("content", [])
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            if block.get("name") != "Bash":
+                continue
+            command = block.get("input", {}).get("command", "")
+            if any(script in command for script in TTS_SCRIPTS):
+                log.info(f"Skipping TTS: turn included TTS script in Bash call")
+                return False, "", 0, 0.0, False
+
     thinking_triggered = any(kw in user_text_lower for kw in THINKING_KEYWORDS)
 
     # Get assistant entries after last user message
@@ -298,6 +318,12 @@ def speak(message: str):
 def main():
     log.info("Hook invoked")
     hook_input = get_hook_input()
+
+    # Option B: Prevent infinite recursion via stop_hook_active flag
+    if hook_input.get("stop_hook_active", False):
+        log.info("Stop hook already active, preventing recursion")
+        return
+
     transcript_path = hook_input.get("transcript_path", "")
 
     if not transcript_path:

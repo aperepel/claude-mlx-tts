@@ -44,6 +44,16 @@
       "description": "Check TTS server status (running/stopped, port, model)",
       "instruction": "Check if TTS server is running",
       "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-status.sh"
+    },
+    "say": {
+      "description": "Speak text directly using TTS (smoke test)",
+      "instruction": "Speak the provided text using TTS",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/say.sh"
+    },
+    "summary-say": {
+      "description": "Summarize long text and speak the summary",
+      "instruction": "Summarize the provided text and speak it",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/summary-say.sh"
     }
   }
 }

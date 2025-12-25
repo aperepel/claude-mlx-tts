@@ -36,12 +36,16 @@ if ! uv sync --extra mlx; then
 fi
 
 echo ""
-echo "Downloading MLX model (~4GB)..."
+echo "Downloading MLX model..."
 echo "This is a one-time download."
 echo ""
 
+# Read model from tts-notify.py config
+MLX_MODEL=$(grep -E "^MLX_MODEL\s*=" "$SCRIPT_DIR/tts-notify.py" | sed 's/.*"\(.*\)".*/\1/' || echo "mlx-community/chatterbox-turbo-fp16")
+echo "Model: $MLX_MODEL"
+
 # Download the model
-if uv run python -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/chatterbox-turbo-fp16')"; then
+if uv run python -c "from huggingface_hub import snapshot_download; snapshot_download('$MLX_MODEL')"; then
     echo ""
     echo "MLX TTS setup complete!"
     echo "Run /tts-start to pre-warm the server for faster responses."

@@ -54,9 +54,22 @@ For direct installation:
 
 After installation, the plugin is active immediately—no restart required.
 
+For MLX voice cloning, install dependencies and start the server (pre-warms the model for faster responses):
+
+```
+/tts-init
+/tts-start
+```
+
 ### Test It
 
-Start a new Claude session and trigger deep work:
+Quick smoke test:
+
+```
+/say Hello world
+```
+
+Or trigger deep work to hear an automatic summary:
 
 ```
 > think about what makes good API design
@@ -73,6 +86,8 @@ Replace `assets/default_voice.wav` with your recording.
 | Command | Description |
 |---------|-------------|
 | `/tts-init` | Install MLX dependencies and download model (~4GB) |
+| `/say <text>` | Speak text directly (smoke test) |
+| `/summary-say <text>` | Summarize long text and speak it |
 | `/tts-start` | Start server (pre-warms model for faster responses) |
 | `/tts-stop` | Stop server (reclaims ~4GB GPU memory) |
 | `/tts-status` | Check if server is running |
@@ -86,7 +101,20 @@ MIN_DURATION_SECS = 15      # Response duration threshold
 MIN_TOOL_CALLS = 2          # Tool call threshold
 ATTENTION_PREFIX = "[clear throat] Attention on deck."
 MLX_SPEED = 1.6             # Playback speed
+MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"  # Model to use
 ```
+
+### Model Options
+
+The default model is `chatterbox-turbo-fp16` (~4GB). For smaller memory footprint, try:
+
+| Model | Size | Quality |
+|-------|------|---------|
+| `mlx-community/chatterbox-turbo-fp16` | ~4GB | Best |
+| `mlx-community/chatterbox-turbo-8bit` | ~2GB | Good |
+| `mlx-community/chatterbox-turbo-4bit` | ~1GB | Acceptable |
+
+To use a different model, edit `MLX_MODEL` in `scripts/tts-notify.py` and run `/tts-init` to download it.
 
 ## Troubleshooting
 
