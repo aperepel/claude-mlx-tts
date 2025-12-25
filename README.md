@@ -44,7 +44,7 @@ Already in a Claude Code session? Use the `/plugin` command:
 /plugin
 ```
 
-This opens an interactive browser where you can search for and install plugins without leaving your session. Search for "mlx-tts" and select install.
+This opens an interactive browser where you can search for and install plugins without leaving your session. Search for `mlx-tts` and select install.
 
 For direct installation:
 
