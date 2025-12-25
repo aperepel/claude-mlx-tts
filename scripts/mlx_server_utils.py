@@ -1,0 +1,317 @@
+"""
+MLX TTS Server Utilities - Lifecycle management for mlx_audio.server.
+
+This module provides:
+- Server health checks
+- Auto-start/stop functionality
+- HTTP-based TTS requests to the server
+
+Architecture:
+    Hook fires → Server alive? ──Yes──▶ Send TTS request
+                      │
+                      No
+                      ↓
+                Start server
+                Wait for ready (~10s cold)
+                Send TTS request
+
+Usage:
+    from mlx_server_utils import speak_mlx_http, stop_server, get_server_status
+
+    # TTS (auto-starts server if needed)
+    speak_mlx_http("Hello, world!")
+
+    # Check status
+    status = get_server_status()
+
+    # Stop server to reclaim memory
+    stop_server()
+"""
+import logging
+import os
+import subprocess
+import sys
+import time
+from typing import Any
+
+import requests
+
+log = logging.getLogger(__name__)
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+TTS_SERVER_PORT = int(os.environ.get("TTS_SERVER_PORT", "21099"))
+TTS_SERVER_HOST = os.environ.get("TTS_SERVER_HOST", "localhost")
+TTS_IDLE_TIMEOUT = int(os.environ.get("TTS_IDLE_TIMEOUT", "900"))  # 15 min default
+TTS_START_TIMEOUT = int(os.environ.get("TTS_START_TIMEOUT", "60"))  # 60s for cold start
+
+# Server log file
+TTS_SERVER_LOG = os.environ.get(
+    "TTS_SERVER_LOG",
+    os.path.join(os.path.dirname(__file__), "..", "logs", "mlx-server.log")
+)
+
+# MLX model to preload
+MLX_MODEL = os.environ.get("MLX_TTS_MODEL", "mlx-community/chatterbox-turbo-fp16")
+MLX_SPEED = float(os.environ.get("MLX_TTS_SPEED", "1.6"))
+MLX_VOICE_REF = os.environ.get(
+    "MLX_TTS_VOICE_REF",
+    os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
+)
+
+
+# =============================================================================
+# Exceptions
+# =============================================================================
+
+class ServerStartError(Exception):
+    """Raised when server fails to start within timeout."""
+    pass
+
+
+class TTSRequestError(Exception):
+    """Raised when TTS request to server fails."""
+    pass
+
+
+# =============================================================================
+# Server Health Check (Phase 1)
+# =============================================================================
+
+def is_server_alive(port: int = TTS_SERVER_PORT, host: str = TTS_SERVER_HOST) -> bool:
+    """
+    Check if the TTS server is running and responding.
+
+    Args:
+        port: Server port to check.
+        host: Server host.
+
+    Returns:
+        True if server responds to health check, False otherwise.
+    """
+    try:
+        # mlx_audio.server uses root endpoint (no /health)
+        response = requests.get(
+            f"http://{host}:{port}/",
+            timeout=2
+        )
+        return response.status_code == 200
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        return False
+    except Exception as e:
+        log.debug(f"Health check failed: {e}")
+        return False
+
+
+def wait_for_ready(
+    port: int = TTS_SERVER_PORT,
+    host: str = TTS_SERVER_HOST,
+    timeout: int = 30,
+    poll_interval: float = 0.5
+) -> bool:
+    """
+    Wait for server to become ready.
+
+    Args:
+        port: Server port.
+        host: Server host.
+        timeout: Maximum seconds to wait.
+        poll_interval: Seconds between health checks.
+
+    Returns:
+        True if server becomes ready, False on timeout.
+    """
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        if is_server_alive(port=port, host=host):
+            return True
+        time.sleep(poll_interval)
+
+    return False
+
+
+# =============================================================================
+# Auto-Start Logic (Phase 2)
+# =============================================================================
+
+def ensure_server_running(
+    port: int = TTS_SERVER_PORT,
+    timeout: int = TTS_START_TIMEOUT
+) -> None:
+    """
+    Ensure the TTS server is running, starting it if necessary.
+
+    Args:
+        port: Server port.
+        timeout: Maximum seconds to wait for startup.
+
+    Raises:
+        ServerStartError: If server fails to start within timeout.
+    """
+    if is_server_alive(port=port):
+        log.debug(f"Server already running on port {port}")
+        return
+
+    log.info(f"Starting mlx_audio.server on port {port}")
+
+    # Start server in background
+    cmd = [
+        sys.executable, "-m", "mlx_audio.server",
+        "--port", str(port),
+    ]
+
+    # Add idle timeout if mlx_audio.server supports it
+    # Note: Check mlx_audio version for this feature
+    # cmd.extend(["--idle-timeout", str(TTS_IDLE_TIMEOUT)])
+
+    # Log server output to file for debugging
+    log_path = os.path.abspath(TTS_SERVER_LOG)
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    log.info(f"Server logs: {log_path}")
+    log_file = open(log_path, "a")
+    log_file.write(f"\n=== Server starting at {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+    log_file.flush()
+
+    subprocess.Popen(
+        cmd,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,  # Detach from parent
+    )
+
+    log.info(f"Waiting for server to become ready (timeout={timeout}s)")
+
+    if not wait_for_ready(port=port, timeout=timeout):
+        raise ServerStartError(f"Server failed to start within {timeout}s")
+
+    log.info("Server is ready")
+
+
+# =============================================================================
+# TTS via HTTP (Phase 3)
+# =============================================================================
+
+def speak_mlx_http(
+    text: str,
+    speed: float = MLX_SPEED,
+    voice: str | None = None,
+    timeout: int = 60
+) -> None:
+    """
+    Send TTS request to the server via HTTP.
+
+    Auto-starts server if not running.
+
+    Args:
+        text: Text to convert to speech.
+        speed: Speech speed multiplier.
+        voice: Voice/model to use.
+        timeout: Request timeout in seconds.
+
+    Raises:
+        ServerStartError: If server fails to start.
+        TTSRequestError: If TTS request fails.
+    """
+    if not text or not text.strip():
+        log.warning("Empty text, skipping TTS")
+        return
+
+    ensure_server_running()
+
+    url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
+
+    payload = {
+        "input": text,
+        "speed": speed,
+        "model": voice or MLX_MODEL,
+    }
+
+    log.debug(f"Sending TTS request: {text[:50]}...")
+
+    try:
+        response = requests.post(url, json=payload, timeout=timeout)
+
+        if response.status_code != 200:
+            raise TTSRequestError(
+                f"TTS request failed with status {response.status_code}: {response.text}"
+            )
+
+        log.debug("TTS request completed")
+
+    except requests.exceptions.RequestException as e:
+        raise TTSRequestError(f"TTS request failed: {e}") from e
+
+
+# =============================================================================
+# Server Stop (Phase 4)
+# =============================================================================
+
+def stop_server(port: int = TTS_SERVER_PORT) -> bool:
+    """
+    Stop the TTS server if running.
+
+    Args:
+        port: Server port.
+
+    Returns:
+        True if server was stopped, False if not running.
+    """
+    if not is_server_alive(port=port):
+        log.debug("Server not running, nothing to stop")
+        return False
+
+    log.info(f"Stopping server on port {port}")
+
+    # Find and kill the process using the port
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True,
+            text=True
+        )
+
+        if result.stdout.strip():
+            pids = result.stdout.strip().split("\n")
+            for pid in pids:
+                try:
+                    subprocess.run(["kill", pid], check=True)
+                    log.debug(f"Killed process {pid}")
+                except subprocess.CalledProcessError:
+                    log.warning(f"Failed to kill process {pid}")
+
+    except Exception as e:
+        log.warning(f"Error stopping server: {e}")
+        return False
+
+    # Wait for server to stop
+    for _ in range(10):
+        if not is_server_alive(port=port):
+            log.info("Server stopped")
+            return True
+        time.sleep(0.5)
+
+    log.warning("Server did not stop cleanly")
+    return False
+
+
+def get_server_status(port: int = TTS_SERVER_PORT) -> dict[str, Any]:
+    """
+    Get current server status.
+
+    Args:
+        port: Server port.
+
+    Returns:
+        Dictionary with status information.
+    """
+    running = is_server_alive(port=port)
+
+    return {
+        "running": running,
+        "port": port,
+        "host": TTS_SERVER_HOST,
+        "model": MLX_MODEL,
+    }

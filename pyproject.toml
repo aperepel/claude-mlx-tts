@@ -20,6 +20,12 @@ mlx = [
     "einops>=0.8",       # Required by codec models
     "sounddevice>=0.5",  # Required for audio playback
     "pyloudnorm>=0.1",   # Required for loudness normalization
+    "requests>=2.31",    # Required for HTTP TTS server communication
+    "uvicorn>=0.30",     # Required for mlx_audio.server
+    "fastapi>=0.111",    # Required for mlx_audio.server
+    "python-multipart",  # Required for FastAPI file uploads
+    "webrtcvad>=2.0.10", # Required for mlx_audio.server
+    "setuptools",        # Required by webrtcvad (pkg_resources)
 ]
 # Development dependencies
 dev = [
