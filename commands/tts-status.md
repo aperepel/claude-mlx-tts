@@ -2,6 +2,8 @@
 description: Check if the MLX TTS server is running
 ---
 
-Check the current status of the TTS server.
+Run this command to check the TTS server status:
 
-!`${CLAUDE_PLUGIN_ROOT}/scripts/tts-status.sh`
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/tts-status.sh
+```

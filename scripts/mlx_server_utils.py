@@ -44,7 +44,7 @@ log = logging.getLogger(__name__)
 
 TTS_SERVER_PORT = int(os.environ.get("TTS_SERVER_PORT", "21099"))
 TTS_SERVER_HOST = os.environ.get("TTS_SERVER_HOST", "localhost")
-TTS_IDLE_TIMEOUT = int(os.environ.get("TTS_IDLE_TIMEOUT", "900"))  # 15 min default
+TTS_IDLE_TIMEOUT = int(os.environ.get("TTS_IDLE_TIMEOUT", "3600"))  # 60 min default
 TTS_START_TIMEOUT = int(os.environ.get("TTS_START_TIMEOUT", "60"))  # 60s for cold start
 
 # Server log file
@@ -157,15 +157,12 @@ def ensure_server_running(
 
     log.info(f"Starting mlx_audio.server on port {port}")
 
-    # Start server in background
+    # Start server in background with single worker to avoid semaphore leaks
     cmd = [
         sys.executable, "-m", "mlx_audio.server",
         "--port", str(port),
+        "--workers", "1",
     ]
-
-    # Add idle timeout if mlx_audio.server supports it
-    # Note: Check mlx_audio version for this feature
-    # cmd.extend(["--idle-timeout", str(TTS_IDLE_TIMEOUT)])
 
     # Log server output to file for debugging
     log_path = os.path.abspath(TTS_SERVER_LOG)
@@ -227,6 +224,7 @@ def speak_mlx_http(
         "input": text,
         "speed": speed,
         "model": voice or MLX_MODEL,
+        "ref_audio": os.path.abspath(MLX_VOICE_REF),
     }
 
     log.debug(f"Sending TTS request: {text[:50]}...")
@@ -238,6 +236,19 @@ def speak_mlx_http(
             raise TTSRequestError(
                 f"TTS request failed with status {response.status_code}: {response.text}"
             )
+
+        # Play the audio response
+        audio_data = response.content
+        if audio_data:
+            import sounddevice as sd
+            import soundfile as sf
+            import io
+
+            # Load audio from response bytes
+            audio_buffer = io.BytesIO(audio_data)
+            data, samplerate = sf.read(audio_buffer)
+            sd.play(data, samplerate)
+            sd.wait()  # Wait for playback to complete
 
         log.debug("TTS request completed")
 
@@ -265,7 +276,7 @@ def stop_server(port: int = TTS_SERVER_PORT) -> bool:
 
     log.info(f"Stopping server on port {port}")
 
-    # Find and kill the process using the port
+    # Find and gracefully stop the process using the port
     try:
         result = subprocess.run(
             ["lsof", "-ti", f":{port}"],
@@ -275,12 +286,26 @@ def stop_server(port: int = TTS_SERVER_PORT) -> bool:
 
         if result.stdout.strip():
             pids = result.stdout.strip().split("\n")
+
+            # Send SIGTERM first for graceful shutdown
             for pid in pids:
                 try:
-                    subprocess.run(["kill", pid], check=True)
-                    log.debug(f"Killed process {pid}")
+                    subprocess.run(["kill", "-TERM", pid], check=True)
+                    log.debug(f"Sent SIGTERM to process {pid}")
                 except subprocess.CalledProcessError:
-                    log.warning(f"Failed to kill process {pid}")
+                    pass
+
+            # Wait for graceful shutdown
+            time.sleep(2)
+
+            # Force kill any remaining processes
+            for pid in pids:
+                try:
+                    subprocess.run(["kill", "-9", pid], check=True,
+                                   stderr=subprocess.DEVNULL)
+                    log.debug(f"Force killed process {pid}")
+                except subprocess.CalledProcessError:
+                    pass  # Already dead
 
     except Exception as e:
         log.warning(f"Error stopping server: {e}")

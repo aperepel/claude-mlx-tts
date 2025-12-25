@@ -2,6 +2,8 @@
 description: Start the MLX TTS server (pre-warms model for <1s responses)
 ---
 
-Start the TTS server to keep the model warm for fast responses.
+Run this command to start the TTS server:
 
-!`${CLAUDE_PLUGIN_ROOT}/scripts/tts-start.sh`
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/tts-start.sh
+```

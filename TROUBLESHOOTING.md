@@ -50,3 +50,31 @@ tail -20 ~/.claude/plugins/aperepel__claude-mlx-tts/logs/tts-notify.log
 If MLX fails, the plugin falls back to macOS `say` command. Check logs for the failure reason. Common causes:
 - Missing voice reference file (`assets/default_voice.wav`)
 - Corrupted model cache (wipe `~/.cache/huggingface/hub/models--mlx-community--chatterbox-turbo-fp16`)
+
+## TTS Server Management
+
+The plugin uses a background server to keep the model warm. Server auto-starts on first TTS request.
+
+**Pre-warm server:**
+```bash
+/tts-start
+```
+
+**Check server status:**
+```bash
+/tts-status
+```
+
+**Stop server to reclaim GPU memory (up to 4GB):**
+```bash
+/tts-stop
+```
+
+**Log file locations:**
+- **TTS hook log**: `logs/tts-notify.log`
+- **MLX server log**: `logs/mlx-server.log`
+
+**Disable HTTP server (use direct API):**
+```bash
+export TTS_USE_HTTP=false
+```

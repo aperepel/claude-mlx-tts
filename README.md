@@ -53,6 +53,16 @@ Want to use your own voice? See [RECORDING.md](RECORDING.md) for instructions on
 
 Replace `assets/default_voice.wav` with your recording.
 
+## Server Commands
+
+The plugin includes slash commands for managing the MLX TTS server:
+
+| Command | Description |
+|---------|-------------|
+| `/tts-start` | Start server (pre-warms model for <1s responses) |
+| `/tts-stop` | Stop server (reclaims ~4GB GPU memory) |
+| `/tts-status` | Check if server is running |
+
 ## Configuration
 
 Edit `scripts/tts-notify.py`:

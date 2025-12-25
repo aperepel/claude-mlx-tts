@@ -11,6 +11,34 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/approve-tts.py"
+          }
+        ]
+      }
     ]
+  },
+  "skills": {
+    "tts-start": {
+      "description": "Start TTS server to keep model warm",
+      "instruction": "Start the TTS background server",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-start.sh"
+    },
+    "tts-stop": {
+      "description": "Stop the TTS server to reclaim GPU memory (up to 4GB)",
+      "instruction": "Stop the TTS background server",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-stop.sh"
+    },
+    "tts-status": {
+      "description": "Check TTS server status (running/stopped, port, model)",
+      "instruction": "Check if TTS server is running",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-status.sh"
+    }
   }
 }
