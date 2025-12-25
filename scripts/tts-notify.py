@@ -51,11 +51,10 @@ SAY_RATE = 180              # Words per minute
 # Attention prefix (heads-up before content)
 ATTENTION_PREFIX = "[clear throat] Attention on deck."
 
-# MLX Voice Cloning (auto-enabled when MLX installed)
-MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"
+# MLX Voice Cloning settings
+MLX_SPEED = 1.6             # Speech speed multiplier (0.5-2.0)
 # Voice reference: bundled in assets/, replace with your own if desired
 MLX_VOICE_REF = os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
-MLX_SPEED = 1.6
 
 # =============================================================================
 # IMPLEMENTATION
@@ -221,31 +220,11 @@ def speak_say(message: str):
 
 
 def speak_mlx(message: str):
-    """Speak using MLX voice cloning."""
-    log.debug(f"Using MLX TTS (model={MLX_MODEL}, speed={MLX_SPEED})")
-    output_dir = "/tmp/claude-tts"
-    os.makedirs(output_dir, exist_ok=True)
-
-    env = os.environ.copy()
-    env["TOKENIZERS_PARALLELISM"] = "false"
-
+    """Speak using MLX voice cloning via direct API."""
     try:
-        subprocess.run(
-            [
-                sys.executable, "-m", "mlx_audio.tts.generate",
-                "--model", MLX_MODEL,
-                "--text", message,
-                "--ref_audio", MLX_VOICE_REF,
-                "--ref_text", ".",
-                "--speed", str(MLX_SPEED),
-                "--file_prefix", os.path.join(output_dir, "notification"),
-                "--play"
-            ],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=60
-        )
+        from mlx_tts_core import speak_mlx as _speak_mlx
+        log.debug(f"Using MLX TTS (direct API, speed={MLX_SPEED})")
+        _speak_mlx(message, speed=MLX_SPEED, ref_audio=MLX_VOICE_REF)
         log.debug("MLX TTS completed successfully")
     except Exception as e:
         log.warning(f"MLX TTS failed: {e}, falling back to macOS say")

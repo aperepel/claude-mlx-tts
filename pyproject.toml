@@ -15,8 +15,21 @@ dependencies = []
 # MLX voice cloning on Apple Silicon (for local dev/testing)
 mlx = [
     "mlx-audio>=0.2.9",
+    "librosa>=0.10",    # Required by chatterbox_turbo model
+    "mlx-lm>=0.22",     # Required for GPT2 cache in chatterbox_turbo
+    "einops>=0.8",      # Required by codec models
+    "sounddevice>=0.5", # Required for audio playback
+]
+# Development dependencies
+dev = [
+    "pytest>=8.0",
 ]
 
 [tool.uv]
 # This is a plugin/script, not an installable Python package
 package = false
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests that require audio hardware (deselect with '-m \"not integration\"')",
+]
