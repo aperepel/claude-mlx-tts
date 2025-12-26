@@ -33,6 +33,26 @@ say -v Daniel -r 180 "Test message"
 uv run python -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/chatterbox-turbo-fp16')"
 ```
 
+## Release Process
+
+**CRITICAL**: Versions must stay synchronized across three files:
+
+| File | Field |
+|------|-------|
+| `pyproject.toml` | `version = "X.Y.Z"` |
+| `.claude-plugin/plugin.json` | `"version": "X.Y.Z"` |
+| `.claude-plugin/marketplace.json` | `metadata.version` AND `plugins[0].version` |
+
+Release workflow:
+```bash
+# 1. Update version in all three files
+# 2. Commit: git commit -m "Release vX.Y.Z: [description]"
+# 3. Tag: git tag -a vX.Y.Z -m "Version X.Y.Z"
+# 4. Push: git push origin main && git push origin vX.Y.Z
+```
+
+Note: Git tags are for release history only. The marketplace always pulls the latest commit from main—users update when they run `/plugin marketplace update` followed by `/plugin update`.
+
 ## Key Configuration (in scripts/tts-notify.py)
 
 - `MIN_DURATION_SECS`: Response duration threshold (default 15s)
