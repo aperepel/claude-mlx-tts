@@ -1,8 +1,7 @@
 """
-Tests for TTS server lifecycle management.
+Unit tests for TTS server lifecycle management.
 
-Following TDD approach: 🔴 Red Phase - tests written BEFORE implementation.
-Run with: uv run pytest tests/test_server_lifecycle.py -v
+Run with: uv run pytest tests/unit/test_server_lifecycle.py -v
 """
 import os
 import sys
@@ -13,7 +12,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 # Add scripts to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 
 # =============================================================================
@@ -225,6 +224,7 @@ class TestSpeakMlxHttp:
             with patch("mlx_server_utils.requests.post") as mock_post:
                 mock_response = MagicMock()
                 mock_response.status_code = 200
+                mock_response.content = b""  # Empty audio data to skip playback
                 mock_post.return_value = mock_response
 
                 speak_mlx_http("Hello")
@@ -239,6 +239,7 @@ class TestSpeakMlxHttp:
             with patch("mlx_server_utils.requests.post") as mock_post:
                 mock_response = MagicMock()
                 mock_response.status_code = 200
+                mock_response.content = b""  # Empty audio data to skip playback
                 mock_post.return_value = mock_response
 
                 speak_mlx_http("Test message", speed=1.5)
@@ -257,6 +258,7 @@ class TestSpeakMlxHttp:
             with patch("mlx_server_utils.requests.post") as mock_post:
                 mock_response = MagicMock()
                 mock_response.status_code = 200
+                mock_response.content = b""  # Empty audio data to skip playback
                 mock_post.return_value = mock_response
 
                 speak_mlx_http("Test")

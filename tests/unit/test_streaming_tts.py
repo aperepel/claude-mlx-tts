@@ -1,10 +1,7 @@
 """
-Tests for MLX TTS streaming functionality.
+Unit tests for MLX TTS streaming functionality.
 
-TDD Phase: RED - These tests are written FIRST before implementation.
-All tests should FAIL initially because streaming is not yet implemented.
-
-Run with: uv run pytest tests/test_streaming_tts.py -v
+Run with: uv run pytest tests/unit/test_streaming_tts.py -v
 """
 import os
 import sys
@@ -13,7 +10,7 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 # Add scripts to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 
 class TestStreamingConfig:
@@ -196,30 +193,6 @@ class TestStreamingFileSaveConstraint:
 
 class TestStreamingPerformance:
     """Performance tests for streaming TTS."""
-
-    @pytest.mark.integration
-    def test_streaming_reduces_ttft(self):
-        """Streaming should reduce time-to-first-audio compared to non-streaming."""
-        import time
-        from mlx_tts_core import generate_speech, get_model
-
-        model = get_model()
-        test_text = "This is a test of streaming text to speech generation."
-
-        # Measure non-streaming TTFT (approximated by full generation time)
-        start = time.time()
-        generate_speech(test_text, model=model, play=False, stream=False)
-        non_streaming_time = time.time() - start
-
-        # Streaming with 0.5s interval should start faster
-        # Note: We can't easily measure TTFT without audio hooks,
-        # but we can verify the parameters are passed correctly
-        with patch("mlx_audio.tts.generate.generate_audio") as mock_gen:
-            generate_speech(test_text, model=model, play=True, stream=True, streaming_interval=0.5)
-
-            call_kwargs = mock_gen.call_args[1]
-            assert call_kwargs["stream"] is True
-            assert call_kwargs["streaming_interval"] == 0.5
 
     def test_streaming_interval_0_5_target(self):
         """Target streaming interval of 0.5s should be used by default."""

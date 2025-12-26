@@ -1,8 +1,7 @@
 """
-Tests for permission-notify.py hook.
+Unit tests for permission-notify.py hook.
 
-Following TDD approach: these tests are written FIRST before implementation fixes.
-Run with: uv run pytest tests/test_permission_notify.py
+Run with: uv run pytest tests/unit/test_permission_notify.py
 
 The permission-notify hook triggers TTS when:
 1. Time since last user message >= 30s (IDLE_THRESHOLD_SECS)
@@ -20,7 +19,7 @@ from unittest.mock import MagicMock, Mock, patch, call
 import pytest
 
 # Import permission-notify.py module (has dash in filename, can't use normal import)
-HOOKS_DIR = os.path.join(os.path.dirname(__file__), "..", "hooks")
+HOOKS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "hooks")
 PERMISSION_NOTIFY_PATH = os.path.join(HOOKS_DIR, "permission-notify.py")
 spec = importlib.util.spec_from_file_location("permission_notify", PERMISSION_NOTIFY_PATH)
 permission_notify = importlib.util.module_from_spec(spec)

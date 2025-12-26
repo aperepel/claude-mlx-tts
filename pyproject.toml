@@ -37,9 +37,12 @@ dev = [
 package = false
 
 [tool.pytest.ini_options]
-markers = [
-    "integration: marks tests that require audio hardware (deselect with '-m \"not integration\"')",
-]
+# Directory-based test organization:
+# - tests/unit/       - Fast, isolated unit tests (run by default)
+# - tests/integration/ - Tests requiring MLX, audio hardware, or server processes
+testpaths = ["tests/unit"]
+# To run all tests including integration: uv run pytest tests/
+# To run only integration tests: uv run pytest tests/integration/
 
 [dependency-groups]
 dev = [

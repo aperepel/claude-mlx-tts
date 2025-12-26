@@ -1,9 +1,7 @@
 """
-Tests for audio_processor module - dynamic range compression and limiting.
+Unit tests for audio_processor module - dynamic range compression and limiting.
 
-TDD Phase: RED - Tests written FIRST before implementation.
-
-Run with: uv run pytest tests/test_audio_processor.py -v
+Run with: uv run pytest tests/unit/test_audio_processor.py -v
 """
 import os
 import sys
@@ -13,7 +11,7 @@ import numpy as np
 import pytest
 
 # Add scripts to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 
 class TestAudioProcessorModule:

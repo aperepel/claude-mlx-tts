@@ -1,11 +1,8 @@
 """
-Tests for MLX TTS core module.
+Unit tests for MLX TTS core module.
 
 Following TDD approach: these tests are written FIRST before implementation.
-Run with: uv run pytest tests/
-
-To run integration tests (require audio hardware):
-    uv run pytest tests/ -m integration
+Run with: uv run pytest tests/unit/
 """
 import os
 import sys
@@ -15,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Add scripts to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 
 class TestLoadTtsModel:
@@ -126,14 +123,6 @@ class TestSpeakMlx:
             speak_mlx("Test", speed=1.2)
             call_kwargs = mock_gen.call_args[1]
             assert call_kwargs["speed"] == 1.2
-
-    @pytest.mark.integration
-    def test_speak_mlx_plays_audio_integration(self):
-        """Integration test: speak_mlx should generate and play audio."""
-        from mlx_tts_core import speak_mlx
-
-        # This will actually play audio - only run with -m integration
-        speak_mlx("Testing speak MLX function")
 
 
 class TestWarmLatency:
@@ -394,22 +383,3 @@ class TestStreamingMetrics:
         # Check that metrics were logged
         assert any("TTS:" in record.message for record in caplog.records)
         assert any("ttft=" in record.message for record in caplog.records)
-
-    @pytest.mark.integration
-    def test_streaming_metrics_integration(self):
-        """Integration test: verify metrics work with real model."""
-        from mlx_tts_core import generate_speech, get_model
-
-        model = get_model()
-        metrics = generate_speech(
-            "Integration test",
-            model=model,
-            play=False,
-            stream=True,
-            return_metrics=True,
-        )
-
-        assert metrics is not None
-        assert metrics["ttft"] > 0
-        assert metrics["gen_time"] > 0
-        assert metrics["chunks"] >= 1
