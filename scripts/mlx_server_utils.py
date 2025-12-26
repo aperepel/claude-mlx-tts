@@ -154,13 +154,16 @@ def ensure_server_running(
         log.debug(f"Server already running on port {port}")
         return
 
-    log.info(f"Starting mlx_audio.server on port {port}")
+    log.info(f"Starting TTS server with voice caching on port {port}")
 
-    # Start server in background with single worker to avoid semaphore leaks
+    # Start our custom server with voice caching pre-warm
+    server_script = os.path.join(os.path.dirname(__file__), "tts_server.py")
     cmd = [
-        sys.executable, "-m", "mlx_audio.server",
+        sys.executable, server_script,
         "--port", str(port),
         "--workers", "1",
+        "--voice", os.path.abspath(MLX_VOICE_REF),
+        "--model", MLX_MODEL,
     ]
 
     # Log server output to file for debugging
@@ -223,7 +226,7 @@ def speak_mlx_http(
         "input": text,
         "speed": speed,
         "model": voice or MLX_MODEL,
-        "ref_audio": os.path.abspath(MLX_VOICE_REF),
+        # Don't send ref_audio - server uses pre-warmed voice conditionals
     }
 
     log.debug(f"Sending TTS request: {text[:50]}...")

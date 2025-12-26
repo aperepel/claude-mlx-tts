@@ -48,7 +48,7 @@ echo "Model: $MLX_MODEL"
 if uv run python -c "from huggingface_hub import snapshot_download; snapshot_download('$MLX_MODEL')"; then
     echo ""
     echo "MLX TTS setup complete!"
-    echo "Run /tts-start to pre-warm the server for faster responses."
+    echo "Run /tts-start to start the server and cache voice embeddings."
 else
     echo ""
     echo "Failed to download model."

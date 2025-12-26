@@ -21,14 +21,24 @@ import sys
 sys.path.insert(0, '$SCRIPT_DIR')
 from mlx_server_utils import ensure_server_running, get_server_status, ServerStartError
 
+from voice_cache import is_cache_valid
+import os
+
+voice_ref = os.environ.get('MLX_TTS_VOICE_REF', os.path.join('$PLUGIN_ROOT', 'assets', 'default_voice.wav'))
+cache_exists = is_cache_valid(voice_ref)
+
 status = get_server_status()
 if status['running']:
     print(f\"TTS server already running on port {status['port']}\")
 else:
     print('Starting TTS server...')
+    if cache_exists:
+        print('Loading cached voice embeddings...')
+    else:
+        print('Caching voice embeddings (one-time, ~2s)...')
     try:
         ensure_server_running()
-        print(f\"TTS server started on port {get_server_status()['port']}\")
+        print(f\"TTS server ready on port {get_server_status()['port']}\")
         print('Run /tts-stop to reclaim GPU memory when done.')
     except ServerStartError as e:
         print(f'Failed to start server: {e}')
