@@ -26,6 +26,7 @@ mlx = [
     "python-multipart",  # Required for FastAPI file uploads
     "webrtcvad>=2.0.10", # Required for mlx_audio.server
     "setuptools",        # Required by webrtcvad (pkg_resources)
+    "textual>=6.11",     # Required for TTS configuration TUI
 ]
 # Development dependencies
 dev = [
