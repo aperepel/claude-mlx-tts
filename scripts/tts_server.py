@@ -1,5 +1,5 @@
 """
-MLX TTS Server with Voice Caching.
+MLX TTS Server with Voice Caching and Streaming Metrics.
 
 This is a wrapper around mlx_audio.server that pre-warms voice conditionals
 from disk cache, eliminating the ~1.5s voice encoding overhead per request.
@@ -18,11 +18,15 @@ Architecture:
         - Requests can omit ref_audio to use pre-warmed voice
         - If ref_audio is provided and matches default, uses cache
         - If ref_audio differs, prepares fresh conditionals
+
+    Metrics logged per request:
+        TTS: ttft=0.26s gen=2.45s chunks=7 RTF=0.58
 """
 import argparse
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 # Setup logging early
@@ -72,36 +76,71 @@ def prewarm_voice_cache(model, voice_ref: str) -> bool:
 
 def patch_model_generate(model, default_voice_ref: str):
     """
-    Patch model.generate to use cached conditionals when ref_audio matches default.
+    Patch model.generate to use cached conditionals and log streaming metrics.
 
-    This avoids re-extracting conditionals on every request.
+    This avoids re-extracting conditionals on every request and logs:
+    - TTFT (time to first audio chunk)
+    - Total generation time
+    - Chunk count
+    - RTF (real-time factor)
     """
     original_generate = model.generate
+    sample_rate = model.sample_rate
 
-    def cached_generate(
+    def cached_generate_with_metrics(
         text,
         ref_audio=None,
         **kwargs
     ):
-        # If no ref_audio or matches default, use pre-warmed conditionals
+        # Determine cache status and prepare ref_audio arg
+        use_cache = False
         if ref_audio is None:
-            log.info("[CACHE HIT] Using pre-warmed voice (no ref_audio)")
-            return original_generate(text=text, ref_audio=None, **kwargs)
+            use_cache = True
+        else:
+            ref_path = os.path.abspath(str(ref_audio)) if ref_audio else None
+            default_path = os.path.abspath(default_voice_ref)
+            if ref_path == default_path:
+                use_cache = True
 
-        # Normalize paths for comparison
-        ref_path = os.path.abspath(str(ref_audio)) if ref_audio else None
-        default_path = os.path.abspath(default_voice_ref)
+        if use_cache:
+            log.debug("[CACHE HIT] Using pre-warmed voice")
+            actual_ref_audio = None
+        else:
+            log.info(f"Different voice requested, extracting fresh: {ref_audio}")
+            actual_ref_audio = ref_audio
 
-        if ref_path == default_path:
-            log.info("[CACHE HIT] Using pre-warmed voice (default voice match)")
-            return original_generate(text=text, ref_audio=None, **kwargs)
+        # Wrap generator to capture metrics
+        gen_start = time.perf_counter()
+        ttft = None
+        chunk_count = 0
+        total_samples = 0
+        last_rtf = 0.0
 
-        # Different voice requested, use original behavior
-        log.info(f"Different voice requested, extracting fresh: {ref_audio}")
-        return original_generate(text=text, ref_audio=ref_audio, **kwargs)
+        for result in original_generate(text=text, ref_audio=actual_ref_audio, **kwargs):
+            if ttft is None:
+                ttft = time.perf_counter() - gen_start
 
-    model.generate = cached_generate
-    log.info("Patched model.generate to use voice cache")
+            chunk_count += 1
+            total_samples += len(result.audio)
+            if hasattr(result, 'real_time_factor') and result.real_time_factor:
+                last_rtf = result.real_time_factor
+
+            yield result
+
+        gen_time = time.perf_counter() - gen_start
+
+        # Calculate metrics
+        audio_duration = total_samples / sample_rate if sample_rate > 0 else 0.0
+        rtf = gen_time / audio_duration if audio_duration > 0 else last_rtf
+
+        # Log metrics
+        log.info(
+            f"TTS: ttft={ttft:.2f}s gen={gen_time:.2f}s "
+            f"chunks={chunk_count} RTF={rtf:.2f}"
+        )
+
+    model.generate = cached_generate_with_metrics
+    log.info("Patched model.generate to use voice cache with metrics")
 
 
 def main():
