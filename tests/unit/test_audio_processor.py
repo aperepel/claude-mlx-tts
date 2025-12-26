@@ -335,3 +335,327 @@ class TestEdgeCases:
             audio = np.random.randn(sr).astype(np.float32) * 0.5  # 1 second
             result = process_chunk(audio, sample_rate=sr)
             assert len(result) == len(audio)
+
+
+# =============================================================================
+# Input Gain and Master Gain Tests (TDD - RED PHASE)
+# =============================================================================
+
+
+class TestInputGainDefaults:
+    """Tests for input gain default parameter."""
+
+    def test_default_input_gain_exists(self):
+        """DEFAULT_INPUT_GAIN_DB constant should exist."""
+        from audio_processor import DEFAULT_INPUT_GAIN_DB
+        assert DEFAULT_INPUT_GAIN_DB is not None
+
+    def test_default_input_gain_is_zero(self):
+        """Default input gain should be 0 dB (unity)."""
+        from audio_processor import DEFAULT_INPUT_GAIN_DB
+        assert DEFAULT_INPUT_GAIN_DB == 0.0
+
+
+class TestMasterGainDefaults:
+    """Tests for master gain default parameter."""
+
+    def test_default_master_gain_exists(self):
+        """DEFAULT_MASTER_GAIN_DB constant should exist."""
+        from audio_processor import DEFAULT_MASTER_GAIN_DB
+        assert DEFAULT_MASTER_GAIN_DB is not None
+
+    def test_default_master_gain_is_zero(self):
+        """Default master gain should be 0 dB (unity)."""
+        from audio_processor import DEFAULT_MASTER_GAIN_DB
+        assert DEFAULT_MASTER_GAIN_DB == 0.0
+
+
+class TestCreateProcessorWithGains:
+    """Tests for create_processor with input/master gain parameters."""
+
+    def test_accepts_input_gain_parameter(self):
+        """create_processor should accept input_gain_db parameter."""
+        from audio_processor import create_processor
+        processor = create_processor(
+            sample_rate=24000,
+            input_gain_db=6.0,
+        )
+        assert callable(processor)
+
+    def test_accepts_master_gain_parameter(self):
+        """create_processor should accept master_gain_db parameter."""
+        from audio_processor import create_processor
+        processor = create_processor(
+            sample_rate=24000,
+            master_gain_db=-3.0,
+        )
+        assert callable(processor)
+
+    def test_accepts_both_gain_parameters(self):
+        """create_processor should accept both input and master gain."""
+        from audio_processor import create_processor
+        processor = create_processor(
+            sample_rate=24000,
+            input_gain_db=6.0,
+            master_gain_db=-3.0,
+        )
+        assert callable(processor)
+
+
+class TestProcessChunkWithGains:
+    """Tests for process_chunk with input/master gain parameters."""
+
+    def test_accepts_input_gain_parameter(self):
+        """process_chunk should accept input_gain_db parameter."""
+        from audio_processor import process_chunk
+        audio = np.random.randn(12000).astype(np.float32) * 0.5
+        result = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=6.0,
+        )
+        assert isinstance(result, np.ndarray)
+
+    def test_accepts_master_gain_parameter(self):
+        """process_chunk should accept master_gain_db parameter."""
+        from audio_processor import process_chunk
+        audio = np.random.randn(12000).astype(np.float32) * 0.5
+        result = process_chunk(
+            audio,
+            sample_rate=24000,
+            master_gain_db=-3.0,
+        )
+        assert isinstance(result, np.ndarray)
+
+    def test_accepts_all_gain_parameters(self):
+        """process_chunk should accept input, makeup, and master gain."""
+        from audio_processor import process_chunk
+        audio = np.random.randn(12000).astype(np.float32) * 0.5
+        result = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=3.0,
+            gain_db=6.0,
+            master_gain_db=-3.0,
+        )
+        assert isinstance(result, np.ndarray)
+
+
+class TestInputGainBehavior:
+    """Tests for input gain audio processing behavior."""
+
+    def test_input_gain_amplifies_before_compression(self):
+        """Input gain should amplify signal before compressor."""
+        from audio_processor import process_chunk
+
+        # Quiet signal that won't trigger compression at -18dB threshold
+        audio = np.ones(12000, dtype=np.float32) * 0.05  # ~-26 dB
+
+        # Without input gain - should pass through relatively unchanged
+        result_no_gain = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=0.0,
+            threshold_db=-18,
+            ratio=4.0,
+            gain_db=0,  # No makeup gain
+            master_gain_db=0.0,
+        )
+
+        # With +12dB input gain - signal should now trigger compression
+        result_with_gain = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=12.0,
+            threshold_db=-18,
+            ratio=4.0,
+            gain_db=0,  # No makeup gain
+            master_gain_db=0.0,
+        )
+
+        # Input gain should cause more compression (lower output relative to input boost)
+        rms_no_gain = np.sqrt(np.mean(result_no_gain**2))
+        rms_with_gain = np.sqrt(np.mean(result_with_gain**2))
+
+        # With 12dB input gain, if no compression, output would be 4x louder
+        # But compression should reduce this ratio significantly
+        gain_ratio = rms_with_gain / rms_no_gain
+        assert gain_ratio < 4.0  # Less than full 12dB boost due to compression
+
+    def test_input_gain_zero_is_unity(self):
+        """Input gain of 0 dB should not change signal level vs bypassed input gain."""
+        from audio_processor import process_chunk
+
+        audio = np.ones(12000, dtype=np.float32) * 0.01  # Very quiet
+
+        # Process with 0dB input gain
+        result_zero = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=0.0,
+            threshold_db=-60,
+            ratio=1.0,
+            gain_db=0,
+            master_gain_db=0.0,
+        )
+
+        # Process with +6dB input gain
+        result_boosted = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=6.0,
+            threshold_db=-60,
+            ratio=1.0,
+            gain_db=0,
+            master_gain_db=0.0,
+        )
+
+        # +6dB should be ~2x amplitude
+        rms_zero = np.sqrt(np.mean(result_zero**2))
+        rms_boosted = np.sqrt(np.mean(result_boosted**2))
+        gain_ratio = rms_boosted / rms_zero
+        expected_ratio = 10 ** (6 / 20)  # ~2.0
+
+        np.testing.assert_allclose(gain_ratio, expected_ratio, rtol=0.2)
+
+
+class TestMasterGainBehavior:
+    """Tests for master gain audio processing behavior."""
+
+    def test_master_gain_applied_after_limiter(self):
+        """Master gain should be applied after the limiter."""
+        from audio_processor import process_chunk
+
+        # Create signal that will hit limiter
+        audio = np.ones(24000, dtype=np.float32) * 0.5
+
+        # Process with limiter at -6dB and master gain of +6dB
+        result = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=0.0,
+            threshold_db=-60,  # No compression
+            ratio=1.0,
+            gain_db=0,
+            limiter_threshold_db=-6.0,
+            limiter_release_ms=10,
+            master_gain_db=6.0,
+        )
+
+        # Master gain is applied AFTER limiter, so final peaks can exceed limiter threshold
+        # Limiter output ~0.5 (-6dB), then +6dB master = ~1.0
+        max_output = np.max(np.abs(result[12000:]))  # Skip transient
+        limiter_level = 10 ** (-6.0 / 20)  # ~0.5
+
+        # Output should be higher than limiter threshold due to master gain
+        assert max_output > limiter_level * 1.5
+
+    def test_master_gain_negative_attenuates(self):
+        """Negative master gain should attenuate final output."""
+        from audio_processor import process_chunk
+
+        audio = np.ones(12000, dtype=np.float32) * 0.5
+
+        # Process with -6dB master gain
+        result = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=0.0,
+            threshold_db=-60,
+            ratio=1.0,
+            gain_db=0,
+            limiter_threshold_db=0.0,
+            master_gain_db=-6.0,
+        )
+
+        # Output should be approximately half (-6dB)
+        expected_attenuation = 10 ** (-6.0 / 20)  # ~0.5
+        actual_ratio = np.mean(np.abs(result)) / np.mean(np.abs(audio))
+        np.testing.assert_allclose(actual_ratio, expected_attenuation, rtol=0.2)
+
+    def test_master_gain_zero_is_unity(self):
+        """Master gain of 0 dB should not change level vs bypassed master gain."""
+        from audio_processor import process_chunk
+
+        audio = np.ones(12000, dtype=np.float32) * 0.1
+
+        # Process with 0dB master gain
+        result_zero = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=0.0,
+            threshold_db=-60,
+            ratio=1.0,
+            gain_db=0,
+            master_gain_db=0.0,
+        )
+
+        # Process with +6dB master gain
+        result_boosted = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=0.0,
+            threshold_db=-60,
+            ratio=1.0,
+            gain_db=0,
+            master_gain_db=6.0,
+        )
+
+        # +6dB master should be ~2x amplitude
+        rms_zero = np.sqrt(np.mean(result_zero**2))
+        rms_boosted = np.sqrt(np.mean(result_boosted**2))
+        gain_ratio = rms_boosted / rms_zero
+        expected_ratio = 10 ** (6 / 20)  # ~2.0
+
+        np.testing.assert_allclose(gain_ratio, expected_ratio, rtol=0.2)
+
+
+class TestSignalChainOrder:
+    """Tests to verify signal chain order: Input Gain → Compressor → Makeup → Limiter → Master."""
+
+    def test_full_signal_chain(self):
+        """Full chain should process in correct order."""
+        from audio_processor import process_chunk
+
+        # Quiet signal
+        audio = np.ones(24000, dtype=np.float32) * 0.05
+
+        # Apply all stages:
+        # Input +6dB: 0.05 → 0.1
+        # Compressor at -20dB with 2:1: should compress
+        # Makeup +6dB: boost after compression
+        # Limiter at -3dB: prevent peaks above ~0.7
+        # Master -3dB: final attenuation
+        result = process_chunk(
+            audio,
+            sample_rate=24000,
+            input_gain_db=6.0,
+            threshold_db=-20,
+            ratio=2.0,
+            attack_ms=1,
+            release_ms=10,
+            gain_db=6.0,
+            limiter_threshold_db=-3.0,
+            limiter_release_ms=10,
+            master_gain_db=-3.0,
+        )
+
+        # Output should be processed and within reasonable range
+        assert np.max(np.abs(result)) < 1.0  # Not clipping
+        assert np.mean(np.abs(result)) > 0.01  # Not silent
+
+
+class TestConfigIntegrationWithGains:
+    """Tests for config integration with input/master gain."""
+
+    def test_get_compressor_config_has_input_gain(self):
+        """get_compressor_config should include input_gain_db."""
+        from audio_processor import get_compressor_config
+        config = get_compressor_config()
+        assert "input_gain_db" in config
+
+    def test_get_compressor_config_has_master_gain(self):
+        """get_compressor_config should include master_gain_db."""
+        from audio_processor import get_compressor_config
+        config = get_compressor_config()
+        assert "master_gain_db" in config

@@ -772,3 +772,134 @@ class TestGlobalLimiterConfig:
             mock_save.assert_called_once()
             saved_config = mock_save.call_args[0][0]
             assert saved_config["limiter"]["enabled"] is False
+
+
+# =============================================================================
+# Input Gain and Master Gain Config Tests (TDD - RED PHASE)
+# =============================================================================
+
+
+class TestInputGainConfig:
+    """Tests for input gain configuration."""
+
+    def test_default_compressor_has_input_gain(self):
+        """DEFAULT_COMPRESSOR should include input_gain_db."""
+        from tts_config import DEFAULT_COMPRESSOR
+        assert "input_gain_db" in DEFAULT_COMPRESSOR
+
+    def test_default_input_gain_is_zero(self):
+        """Default input gain should be 0 dB (unity)."""
+        from tts_config import DEFAULT_COMPRESSOR
+        assert DEFAULT_COMPRESSOR["input_gain_db"] == 0.0
+
+    def test_get_compressor_config_returns_input_gain(self):
+        """get_compressor_config should return input_gain_db."""
+        from tts_config import get_compressor_config
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {}
+            config = get_compressor_config()
+
+        assert "input_gain_db" in config
+
+    def test_set_compressor_setting_accepts_input_gain(self):
+        """set_compressor_setting should accept input_gain_db."""
+        from tts_config import set_compressor_setting
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {}
+            set_compressor_setting("input_gain_db", 6.0)
+
+            mock_save.assert_called_once()
+            saved_config = mock_save.call_args[0][0]
+            assert saved_config["compressor"]["input_gain_db"] == 6.0
+
+
+class TestMasterGainConfig:
+    """Tests for master gain configuration."""
+
+    def test_default_compressor_has_master_gain(self):
+        """DEFAULT_COMPRESSOR should include master_gain_db."""
+        from tts_config import DEFAULT_COMPRESSOR
+        assert "master_gain_db" in DEFAULT_COMPRESSOR
+
+    def test_default_master_gain_is_zero(self):
+        """Default master gain should be 0 dB (unity)."""
+        from tts_config import DEFAULT_COMPRESSOR
+        assert DEFAULT_COMPRESSOR["master_gain_db"] == 0.0
+
+    def test_get_compressor_config_returns_master_gain(self):
+        """get_compressor_config should return master_gain_db."""
+        from tts_config import get_compressor_config
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {}
+            config = get_compressor_config()
+
+        assert "master_gain_db" in config
+
+    def test_set_compressor_setting_accepts_master_gain(self):
+        """set_compressor_setting should accept master_gain_db."""
+        from tts_config import set_compressor_setting
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {}
+            set_compressor_setting("master_gain_db", -3.0)
+
+            mock_save.assert_called_once()
+            saved_config = mock_save.call_args[0][0]
+            assert saved_config["compressor"]["master_gain_db"] == -3.0
+
+
+class TestEffectiveGainSettings:
+    """Tests for effective gain settings with voice overrides."""
+
+    def test_get_effective_compressor_includes_input_gain(self):
+        """get_effective_compressor should include input_gain_db."""
+        from tts_config import get_effective_compressor
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"voices": {}}
+            compressor = get_effective_compressor("test_voice")
+
+        assert "input_gain_db" in compressor
+
+    def test_get_effective_compressor_includes_master_gain(self):
+        """get_effective_compressor should include master_gain_db."""
+        from tts_config import get_effective_compressor
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"voices": {}}
+            compressor = get_effective_compressor("test_voice")
+
+        assert "master_gain_db" in compressor
+
+    def test_voice_can_override_input_gain(self):
+        """Voice-specific input_gain_db should override default."""
+        from tts_config import get_effective_compressor
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "voices": {
+                    "loud_voice": {"compressor": {"input_gain_db": 6.0}}
+                }
+            }
+            compressor = get_effective_compressor("loud_voice")
+
+        assert compressor["input_gain_db"] == 6.0
+
+    def test_voice_can_override_master_gain(self):
+        """Voice-specific master_gain_db should override default."""
+        from tts_config import get_effective_compressor
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "voices": {
+                    "quiet_voice": {"compressor": {"master_gain_db": -6.0}}
+                }
+            }
+            compressor = get_effective_compressor("quiet_voice")
+
+        assert compressor["master_gain_db"] == -6.0

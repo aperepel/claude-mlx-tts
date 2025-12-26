@@ -21,6 +21,7 @@ from textual.widgets import (
     Header,
     Input,
     Label,
+    LoadingIndicator,
     OptionList,
     Select,
     Static,
@@ -145,36 +146,49 @@ class ServerStatusWidget(Static):
 
 
 class VoiceSelector(Container):
-    """Voice selection widget with current voice indicator."""
+    """Voice selection widget with vertical list."""
 
     DEFAULT_CSS = """
     VoiceSelector {
-        height: auto;
+        height: 19;
+        width: 32;
         padding: 1;
+        border: round $primary;
+        border-title-color: $text;
+        margin: 1 1 1 0;
     }
-    VoiceSelector > Label {
-        margin-bottom: 1;
-    }
-    VoiceSelector > Select {
+    VoiceSelector > OptionList {
+        height: 100%;
         width: 100%;
     }
     """
 
     def compose(self) -> ComposeResult:
-        yield Label("Voice:")
+        self.border_title = "Voices"
+        voices = discover_voices()
+
+        option_list = OptionList(id="voice-list")
+        for voice in voices:
+            option_list.add_option(Option(voice, id=voice))
+
+        yield option_list
+
+    def on_mount(self) -> None:
+        """Highlight the active voice on mount."""
         voices = discover_voices()
         active = get_active_voice()
-        options = [(v, v) for v in voices] if voices else [("No voices found", "")]
-        yield Select(options, value=active if active in voices else "", id="voice-select")
+        if active in voices:
+            option_list = self.query_one("#voice-list", OptionList)
+            idx = voices.index(active)
+            option_list.highlighted = idx
 
-    def on_select_changed(self, event: Select.Changed) -> None:
-        """Handle voice selection change."""
-        if event.value and event.value != "":
-            try:
-                set_active_voice(event.value)
-                self.notify(f"Voice set to: {event.value}")
-            except ValueError as e:
-                self.notify(str(e), severity="error")
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle voice selection."""
+        voice_name = str(event.option.id)
+        try:
+            set_active_voice(voice_name)
+        except ValueError as e:
+            self.notify(str(e), severity="error")
 
 
 class FormField(Horizontal):
@@ -247,14 +261,23 @@ class FormField(Horizontal):
         inp.value = self._format_value()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle value input."""
+        """Handle value input on Enter."""
         event.stop()
+        self._apply_input_value(event.value)
+
+    def on_input_blurred(self, event: Input.Blurred) -> None:
+        """Handle value input on focus loss from Input widget."""
+        self._apply_input_value(event.value)
+
+    def _apply_input_value(self, raw_value: str) -> None:
+        """Parse and apply a new value from input."""
         try:
-            new_val = float(event.value.strip())
+            new_val = float(raw_value.strip())
             new_val = max(self._min, min(self._max, new_val))
-            self._value = new_val
-            self._update_display()
-            self.post_message(self.Changed(self, self._value))
+            if new_val != self._value:
+                self._value = new_val
+                self._update_display()
+                self.post_message(self.Changed(self, self._value))
         except ValueError:
             self._update_display()
 
@@ -278,31 +301,27 @@ class CompressorWidget(Container):
 
     DEFAULT_CSS = """
     CompressorWidget {
-        height: auto;
+        height: 22;
         padding: 1 2;
-        border: solid $primary;
+        border: round $primary;
+        border-title-color: $text;
         margin: 1 1 1 0;
-        width: 38;
+        width: 44;
     }
     CompressorWidget > .header-row {
         height: 3;
         width: 100%;
     }
-    CompressorWidget > .header-row > Label {
-        width: auto;
-        text-style: bold;
-        padding: 1 1;
-    }
     CompressorWidget > .header-row > Switch {
         width: auto;
     }
     CompressorWidget > .header-row > Select {
-        width: 16;
+        width: 22;
     }
     CompressorWidget > .form-fields {
         height: auto;
         width: 100%;
-        padding: 1 0;
+        padding: 0;
     }
     """
 
@@ -311,12 +330,12 @@ class CompressorWidget(Container):
         self._config = get_compressor_config()
 
     def compose(self) -> ComposeResult:
+        self.border_title = "Compressor"
         config = self._config
 
         # Header with enable toggle and preset selector
         with Horizontal(classes="header-row"):
             yield Switch(value=config.get("enabled", True), id="compressor-enabled")
-            yield Label("Compressor")
             yield Select(
                 [("Custom", "custom")] + [(name, name) for name in COMPRESSOR_PRESETS],
                 value="custom",
@@ -325,6 +344,11 @@ class CompressorWidget(Container):
 
         # Form fields
         with Vertical(classes="form-fields"):
+            yield FormField(
+                "Input Gain", config.get("input_gain_db", 0.0),
+                min_val=-12, max_val=12, unit="dB",
+                param_key="input_gain_db", id="input-gain-field",
+            )
             yield FormField(
                 "Threshold", config.get("threshold_db", -18),
                 min_val=-40, max_val=0, unit="dB",
@@ -365,8 +389,6 @@ class CompressorWidget(Container):
         if event.switch.id == "compressor-enabled":
             try:
                 set_compressor_setting("enabled", event.value)
-                state = "enabled" if event.value else "disabled"
-                self.notify(f"Compressor {state}")
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
@@ -376,7 +398,6 @@ class CompressorWidget(Container):
             preset = COMPRESSOR_PRESETS.get(event.value)
             if preset:
                 self._apply_preset(preset)
-                self.notify(f"Preset: {event.value}")
 
     def _apply_preset(self, preset: dict) -> None:
         """Apply a compressor preset."""
@@ -399,31 +420,27 @@ class LimiterWidget(Container):
 
     DEFAULT_CSS = """
     LimiterWidget {
-        height: auto;
+        height: 22;
         padding: 1 2;
-        border: solid $primary;
+        border: round $primary;
+        border-title-color: $text;
         margin: 1 0 1 1;
-        width: 38;
+        width: 44;
     }
     LimiterWidget > .header-row {
         height: 3;
         width: 100%;
     }
-    LimiterWidget > .header-row > Label {
-        width: auto;
-        text-style: bold;
-        padding: 1 1;
-    }
     LimiterWidget > .header-row > Switch {
         width: auto;
     }
     LimiterWidget > .header-row > Select {
-        width: 16;
+        width: 22;
     }
     LimiterWidget > .form-fields {
         height: auto;
         width: 100%;
-        padding: 1 0;
+        padding: 0;
     }
     """
 
@@ -432,12 +449,12 @@ class LimiterWidget(Container):
         self._config = get_limiter_config()
 
     def compose(self) -> ComposeResult:
+        self.border_title = "Limiter"
         config = self._config
 
         # Header with enable toggle and preset selector
         with Horizontal(classes="header-row"):
             yield Switch(value=config.get("enabled", True), id="limiter-enabled")
-            yield Label("Limiter")
             yield Select(
                 [("Custom", "custom")] + [(name, name) for name in LIMITER_PRESETS],
                 value="custom",
@@ -456,13 +473,25 @@ class LimiterWidget(Container):
                 min_val=10, max_val=200, unit="ms",
                 param_key="release_ms", id="limiter-release-field",
             )
+            # Master gain is stored in compressor config but displayed here
+            # as it's the final output stage after limiter
+            compressor_config = get_compressor_config()
+            yield FormField(
+                "Master Gain", compressor_config.get("master_gain_db", 0.0),
+                min_val=-12, max_val=12, unit="dB",
+                param_key="master_gain_db", id="master-gain-field",
+            )
 
     def on_form_field_changed(self, event: FormField.Changed) -> None:
         """Handle field value changes."""
         param_key = event.field.param_key
         if param_key:
             try:
-                set_limiter_setting(param_key, event.value)
+                if param_key == "master_gain_db":
+                    # Master gain is stored in compressor config
+                    set_compressor_setting(param_key, event.value)
+                else:
+                    set_limiter_setting(param_key, event.value)
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
@@ -471,8 +500,6 @@ class LimiterWidget(Container):
         if event.switch.id == "limiter-enabled":
             try:
                 set_limiter_setting("enabled", event.value)
-                state = "enabled" if event.value else "disabled"
-                self.notify(f"Limiter {state}")
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
@@ -482,7 +509,6 @@ class LimiterWidget(Container):
             preset = LIMITER_PRESETS.get(event.value)
             if preset:
                 self._apply_preset(preset)
-                self.notify(f"Preset: {event.value}")
 
     def _apply_preset(self, preset: dict) -> None:
         """Apply a limiter preset."""
@@ -495,6 +521,160 @@ class LimiterWidget(Container):
         # Update form fields
         self.query_one("#limiter-threshold-field", FormField).value = preset["threshold_db"]
         self.query_one("#limiter-release-field", FormField).value = preset["release_ms"]
+
+
+# Default preview phrases
+PREVIEW_PHRASES = [
+    "The quick brown fox jumps over the lazy dog.",
+    "Hello! Testing one, two, three.",
+    "Claude is ready to help with your tasks.",
+]
+DEFAULT_PREVIEW_PHRASE = PREVIEW_PHRASES[0]
+
+
+class PreviewWidget(Container):
+    """Voice preview widget with phrase display and play button."""
+
+    DEFAULT_CSS = """
+    PreviewWidget {
+        height: auto;
+        padding: 1 2;
+        border: solid $secondary;
+        margin: 1 0;
+        width: 100%;
+    }
+    PreviewWidget > .header-row {
+        height: 3;
+        width: 100%;
+        align: center middle;
+    }
+    PreviewWidget > .header-row > Label {
+        width: auto;
+        text-style: bold;
+        padding: 1 1;
+    }
+    PreviewWidget > .header-row > Button {
+        width: auto;
+        margin-left: 2;
+    }
+    PreviewWidget > .phrase-display {
+        height: auto;
+        padding: 1;
+        margin: 1 0;
+        background: $surface-darken-1;
+        border: round $primary-darken-2;
+    }
+    PreviewWidget > .status-row {
+        height: 3;
+        width: 100%;
+        align: center middle;
+    }
+    PreviewWidget > .status-row > LoadingIndicator {
+        width: auto;
+    }
+    PreviewWidget > .status-row > .status-text {
+        width: auto;
+        padding: 0 1;
+        color: $text-muted;
+    }
+    """
+
+    is_playing = reactive(False)
+    status_message = reactive("")
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._preview_phrase = DEFAULT_PREVIEW_PHRASE
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(classes="header-row"):
+            yield Label("Preview")
+            yield Button("Play", id="play-preview-btn", variant="primary")
+
+        yield Static(f'"{self._preview_phrase}"', id="phrase-display", classes="phrase-display")
+
+        with Horizontal(classes="status-row"):
+            yield LoadingIndicator(id="loading-indicator")
+            yield Static("", id="status-text", classes="status-text")
+
+    def on_mount(self) -> None:
+        """Hide loading indicator initially."""
+        self.query_one("#loading-indicator").display = False
+
+    def watch_is_playing(self, playing: bool) -> None:
+        """Update UI based on playing state."""
+        btn = self.query_one("#play-preview-btn", Button)
+        loader = self.query_one("#loading-indicator")
+
+        if playing:
+            btn.disabled = True
+            btn.label = "Playing..."
+            loader.display = True
+        else:
+            btn.disabled = False
+            btn.label = "Play"
+            loader.display = False
+
+    def watch_status_message(self, message: str) -> None:
+        """Update status text."""
+        status = self.query_one("#status-text", Static)
+        status.update(message)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle play button press."""
+        if event.button.id == "play-preview-btn":
+            self._play_preview()
+
+    def _play_preview(self) -> None:
+        """Play the preview phrase using TTS."""
+        if self.is_playing:
+            return
+
+        self.is_playing = True
+        self.status_message = "Starting TTS..."
+
+        # Run TTS in a worker thread to avoid blocking UI
+        self.run_worker(self._do_tts_playback, exclusive=True)
+
+    async def _do_tts_playback(self) -> None:
+        """Worker method to perform TTS playback."""
+        try:
+            self.status_message = "Generating audio..."
+
+            # Try HTTP server first (faster, uses cached voice)
+            try:
+                from mlx_server_utils import speak_mlx_http, is_server_alive
+                if is_server_alive():
+                    self.status_message = "Playing via server..."
+                    speak_mlx_http(self._preview_phrase)
+                else:
+                    # Fall back to direct MLX invocation
+                    self.status_message = "Server not running, using direct MLX..."
+                    from mlx_tts_core import speak_mlx
+                    speak_mlx(self._preview_phrase)
+            except ImportError:
+                # Fall back to direct MLX if server utils unavailable
+                self.status_message = "Using direct MLX..."
+                from mlx_tts_core import speak_mlx
+                speak_mlx(self._preview_phrase)
+
+            self.status_message = "Playback complete"
+        except Exception as e:
+            self.status_message = f"Error: {str(e)[:40]}"
+            self.notify(f"TTS Error: {e}", severity="error")
+        finally:
+            self.is_playing = False
+
+    @property
+    def preview_phrase(self) -> str:
+        return self._preview_phrase
+
+    @preview_phrase.setter
+    def preview_phrase(self, phrase: str) -> None:
+        self._preview_phrase = phrase
+        if self.is_mounted:
+            display = self.query_one("#phrase-display", Static)
+            display.update(f'"{phrase}"')
 
 
 class VoiceLabScreen(Screen):
@@ -687,11 +867,12 @@ class MainScreen(Screen):
         yield Header()
         with TabbedContent(id="main-tabs"):
             with TabPane("Voice Lab", id="voice-lab"):
-                yield VoiceSelector()
                 with Container(classes="audio-container"):
                     with Horizontal(classes="audio-widgets"):
+                        yield VoiceSelector()
                         yield CompressorWidget(id="compressor-widget")
                         yield LimiterWidget(id="limiter-widget")
+                yield PreviewWidget(id="preview-widget")
             with TabPane("System", id="system"):
                 yield Label("Server Status", classes="section-title")
                 yield ServerStatusWidget(id="server-status")

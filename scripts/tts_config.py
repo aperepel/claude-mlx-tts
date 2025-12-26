@@ -56,11 +56,13 @@ MAX_STREAMING_INTERVAL = 5.0
 # Compressor configuration (notification_punch preset)
 DEFAULT_COMPRESSOR = {
     "enabled": True,
+    "input_gain_db": 0.0,
     "threshold_db": -18,
     "ratio": 3.0,
     "attack_ms": 3,
     "release_ms": 50,
     "gain_db": 8,
+    "master_gain_db": 0.0,
 }
 
 # Limiter configuration (separate from compressor)
