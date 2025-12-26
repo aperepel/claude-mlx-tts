@@ -95,7 +95,8 @@ class TestGenerateSpeech:
             output_path = f.name
 
         try:
-            generate_speech("Test audio output", save_path=output_path, play=False)
+            # Note: stream=False required for file saving
+            generate_speech("Test audio output", save_path=output_path, play=False, stream=False)
             assert os.path.exists(output_path)
             assert os.path.getsize(output_path) > 0
         finally:
@@ -188,3 +189,227 @@ class TestIsMlxAvailable:
         # Should be True if both mlx_audio is installed and voice ref exists
         if os.path.exists(MLX_VOICE_REF):
             assert is_mlx_available() is True
+
+
+class TestStreamingMetrics:
+    """Tests for streaming-aware TTS metrics (TTFT, generation time, etc.)."""
+
+    @pytest.fixture
+    def mock_model(self):
+        """Create a mock model that simulates streaming generation."""
+        import numpy as np
+
+        mock = MagicMock()
+        mock.sample_rate = 24000
+
+        # Create mock generation results
+        def mock_generate(text, ref_audio=None, speed=1.0, stream=True, **kwargs):
+            """Simulate streaming generation with multiple chunks."""
+            chunk_count = 3
+            samples_per_chunk = 12000  # 0.5s at 24kHz
+
+            for i in range(chunk_count):
+                result = MagicMock()
+                result.audio = np.zeros(samples_per_chunk, dtype=np.float32)
+                result.real_time_factor = 0.5
+                yield result
+
+        mock.generate = mock_generate
+        return mock
+
+    @pytest.fixture
+    def mock_player(self):
+        """Create a mock AudioPlayer."""
+        mock = MagicMock()
+        mock.queue_audio = MagicMock()
+        mock.wait_for_drain = MagicMock()
+        return mock
+
+    @pytest.fixture
+    def streaming_patches(self, mock_player):
+        """Set up patches for streaming mode tests."""
+        with patch("mlx_tts_core.AudioPlayer", return_value=mock_player), \
+             patch("mlx_audio.tts.generate.load_audio", return_value=MagicMock()):
+            yield
+
+    def test_generate_speech_returns_metrics_when_requested(self, mock_model, mock_player, streaming_patches):
+        """generate_speech should return metrics dict when return_metrics=True."""
+        from mlx_tts_core import generate_speech
+
+        metrics = generate_speech(
+            "Test metrics return",
+            model=mock_model,
+            play=False,
+            stream=True,
+            return_metrics=True,
+        )
+
+        assert metrics is not None
+        assert isinstance(metrics, dict)
+
+    def test_metrics_contains_ttft(self, mock_model, mock_player, streaming_patches):
+        """Metrics should include time-to-first-audio (ttft)."""
+        from mlx_tts_core import generate_speech
+
+        metrics = generate_speech(
+            "Test TTFT measurement",
+            model=mock_model,
+            play=False,
+            stream=True,
+            return_metrics=True,
+        )
+
+        assert "ttft" in metrics
+        assert isinstance(metrics["ttft"], float)
+        assert metrics["ttft"] >= 0
+
+    def test_metrics_contains_generation_time(self, mock_model, mock_player, streaming_patches):
+        """Metrics should include total generation time."""
+        from mlx_tts_core import generate_speech
+
+        metrics = generate_speech(
+            "Test generation time",
+            model=mock_model,
+            play=False,
+            stream=True,
+            return_metrics=True,
+        )
+
+        assert "gen_time" in metrics
+        assert isinstance(metrics["gen_time"], float)
+        assert metrics["gen_time"] >= 0
+        # Generation time should be >= TTFT
+        assert metrics["gen_time"] >= metrics["ttft"]
+
+    def test_metrics_contains_chunk_count(self, mock_model, mock_player, streaming_patches):
+        """Metrics should include number of streaming chunks."""
+        from mlx_tts_core import generate_speech
+
+        metrics = generate_speech(
+            "Test chunk counting",
+            model=mock_model,
+            play=False,
+            stream=True,
+            return_metrics=True,
+        )
+
+        assert "chunks" in metrics
+        assert isinstance(metrics["chunks"], int)
+        assert metrics["chunks"] == 3  # Our mock yields 3 chunks
+
+    def test_metrics_contains_rtf(self, mock_model, mock_player, streaming_patches):
+        """Metrics should include real-time factor (RTF)."""
+        from mlx_tts_core import generate_speech
+
+        metrics = generate_speech(
+            "Test real time factor",
+            model=mock_model,
+            play=False,
+            stream=True,
+            return_metrics=True,
+        )
+
+        assert "rtf" in metrics
+        assert isinstance(metrics["rtf"], float)
+
+    def test_metrics_contains_audio_duration(self, mock_model, mock_player, streaming_patches):
+        """Metrics should include total audio duration."""
+        from mlx_tts_core import generate_speech
+
+        metrics = generate_speech(
+            "Test audio duration",
+            model=mock_model,
+            play=False,
+            stream=True,
+            return_metrics=True,
+        )
+
+        assert "audio_duration" in metrics
+        assert isinstance(metrics["audio_duration"], float)
+        # 3 chunks * 12000 samples / 24000 Hz = 1.5 seconds
+        assert abs(metrics["audio_duration"] - 1.5) < 0.01
+
+    def test_metrics_contains_play_time_when_played(self, mock_model, mock_player, streaming_patches):
+        """Metrics should include playback drain time when play=True."""
+        from mlx_tts_core import generate_speech
+
+        metrics = generate_speech(
+            "Test play time",
+            model=mock_model,
+            play=True,
+            stream=True,
+            return_metrics=True,
+        )
+
+        assert "play_time" in metrics
+        assert isinstance(metrics["play_time"], float)
+        assert metrics["play_time"] >= 0
+        # Verify player was used
+        assert mock_player.queue_audio.called
+        assert mock_player.wait_for_drain.called
+
+    def test_no_play_time_when_not_played(self, mock_model, mock_player, streaming_patches):
+        """play_time should be 0 when play=False."""
+        from mlx_tts_core import generate_speech
+
+        metrics = generate_speech(
+            "Test no play time",
+            model=mock_model,
+            play=False,
+            stream=True,
+            return_metrics=True,
+        )
+
+        assert "play_time" in metrics
+        assert metrics["play_time"] == 0
+        assert not mock_player.wait_for_drain.called
+
+    def test_default_returns_none_for_backwards_compat(self, mock_model, mock_player, streaming_patches):
+        """By default generate_speech should return None for backwards compatibility."""
+        from mlx_tts_core import generate_speech
+
+        result = generate_speech(
+            "Test default return",
+            model=mock_model,
+            play=False,
+            stream=True,
+        )
+
+        assert result is None
+
+    def test_metrics_logged_to_info(self, mock_model, mock_player, streaming_patches, caplog):
+        """Metrics should be logged at INFO level."""
+        import logging
+        from mlx_tts_core import generate_speech
+
+        with caplog.at_level(logging.INFO, logger="mlx_tts_core"):
+            generate_speech(
+                "Test logging",
+                model=mock_model,
+                play=False,
+                stream=True,
+                return_metrics=True,
+            )
+
+        # Check that metrics were logged
+        assert any("TTS:" in record.message for record in caplog.records)
+        assert any("ttft=" in record.message for record in caplog.records)
+
+    @pytest.mark.integration
+    def test_streaming_metrics_integration(self):
+        """Integration test: verify metrics work with real model."""
+        from mlx_tts_core import generate_speech, get_model
+
+        model = get_model()
+        metrics = generate_speech(
+            "Integration test",
+            model=model,
+            play=False,
+            stream=True,
+            return_metrics=True,
+        )
+
+        assert metrics is not None
+        assert metrics["ttft"] > 0
+        assert metrics["gen_time"] > 0
+        assert metrics["chunks"] >= 1
