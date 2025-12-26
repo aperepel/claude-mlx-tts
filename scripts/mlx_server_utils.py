@@ -258,11 +258,21 @@ def speak_mlx_http(
         if audio_data:
             import sounddevice as sd
             import soundfile as sf
+            import numpy as np
             import io
 
             # Load audio from response bytes
             audio_buffer = io.BytesIO(audio_data)
             data, samplerate = sf.read(audio_buffer)
+            data = data.astype(np.float32)
+
+            # Apply compression/limiting for consistent, punchy playback
+            try:
+                from audio_processor import create_processor
+                processor = create_processor(sample_rate=samplerate)
+                data = processor(data)
+            except ImportError:
+                log.debug("audio_processor not available, skipping compression")
 
             # Calculate audio duration
             audio_duration = len(data) / samplerate
