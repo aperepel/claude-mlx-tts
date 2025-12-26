@@ -211,9 +211,8 @@ def speak_mlx(message: str):
     """Speak using MLX voice cloning via HTTP server."""
     try:
         from mlx_server_utils import speak_mlx_http
-        log.info("MLX TTS (HTTP): generating speech")
+        log.info("MLX TTS (HTTP): speed=1.6")
         speak_mlx_http(message, speed=1.6)
-        log.info("MLX TTS: complete")
     except Exception as e:
         log.warning(f"MLX TTS failed: {e}, falling back to macOS say")
         speak_say(message)

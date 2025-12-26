@@ -232,6 +232,7 @@ def speak_mlx_http(
     log.debug(f"Sending TTS request: {text[:50]}...")
 
     try:
+        gen_start = time.time()
         response = requests.post(url, json=payload, timeout=timeout)
 
         if response.status_code != 200:
@@ -241,6 +242,8 @@ def speak_mlx_http(
 
         # Play the audio response
         audio_data = response.content
+        gen_time = time.time() - gen_start
+
         if audio_data:
             import sounddevice as sd
             import soundfile as sf
@@ -249,10 +252,16 @@ def speak_mlx_http(
             # Load audio from response bytes
             audio_buffer = io.BytesIO(audio_data)
             data, samplerate = sf.read(audio_buffer)
-            sd.play(data, samplerate)
-            sd.wait()  # Wait for playback to complete
 
-        log.debug("TTS request completed")
+            # Calculate audio duration
+            audio_duration = len(data) / samplerate
+            log.info(f"Generation: {gen_time:.2f}s ({audio_duration:.1f}s audio)")
+
+            play_start = time.time()
+            sd.play(data, samplerate)
+            sd.wait()
+            play_time = time.time() - play_start
+            log.info(f"Playback: {play_time:.2f}s")
 
     except requests.exceptions.RequestException as e:
         raise TTSRequestError(f"TTS request failed: {e}") from e

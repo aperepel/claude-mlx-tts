@@ -296,12 +296,11 @@ def speak_mlx(message: str):
     """Speak using MLX voice cloning (HTTP server or direct API)."""
     try:
         if USE_HTTP_SERVER:
-            log.info(f"MLX TTS (HTTP): generating speech (speed={MLX_SPEED})")
+            log.info(f"MLX TTS (HTTP): speed={MLX_SPEED}")
             _generate_mlx_speech_http(message)
         else:
-            log.info(f"MLX TTS (direct): generating speech (speed={MLX_SPEED})")
+            log.info(f"MLX TTS (direct): speed={MLX_SPEED}")
             _generate_mlx_speech_direct(message, play=True)
-        log.info("MLX TTS: complete")
     except Exception as e:
         log.warning(f"MLX TTS failed: {e}, falling back to macOS say")
         speak_say(message)
