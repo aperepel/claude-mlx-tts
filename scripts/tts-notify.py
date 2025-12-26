@@ -53,9 +53,17 @@ ATTENTION_PREFIX = "[clear throat] Attention on deck."
 
 # MLX Voice Cloning settings
 MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"
-MLX_SPEED = 1.6             # Speech speed multiplier (0.5-2.0)
 # Voice reference: bundled in assets/, replace with your own if desired
 MLX_VOICE_REF = os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
+
+
+def get_mlx_speed() -> float:
+    """Get MLX playback speed from config, with fallback to 1.3x default."""
+    try:
+        from tts_config import get_playback_speed
+        return get_playback_speed()
+    except ImportError:
+        return 1.3
 
 # =============================================================================
 # TTS BACKENDS
@@ -64,38 +72,25 @@ MLX_VOICE_REF = os.path.join(os.path.dirname(__file__), "..", "assets", "default
 # Use HTTP server by default for warm latency, with direct API as fallback
 USE_HTTP_SERVER = os.environ.get("TTS_USE_HTTP", "true").lower() == "true"
 
-# Direct API model cache (fallback)
-_cached_model = None
-
-
-def _get_mlx_model():
-    """Get cached MLX model, loading if necessary (for direct API fallback)."""
-    global _cached_model
-    if _cached_model is None:
-        from mlx_audio.tts.utils import load_model
-        log.info(f"Loading MLX model: {MLX_MODEL}")
-        _cached_model = load_model(model_path=MLX_MODEL)
-        log.info("MLX model loaded")
-    return _cached_model
-
 
 def _generate_mlx_speech_direct(text: str, play: bool = True):
-    """Generate speech using direct MLX API (fallback)."""
+    """Generate speech using direct MLX API with metrics logging."""
     if not text or not text.strip():
         return
 
-    from mlx_audio.tts.generate import generate_audio
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    from mlx_tts_core import generate_speech, get_model
 
-    model = _get_mlx_model()
-    generate_audio(
+    model = get_model()
+    speed = get_mlx_speed()
+    # Uses mlx_tts_core which logs metrics (TTFT, gen_time, etc.)
+    generate_speech(
         text=text,
         model=model,
         ref_audio=MLX_VOICE_REF,
         ref_text=".",
-        speed=MLX_SPEED,
+        speed=speed,
         play=play,
-        verbose=False,
+        stream=True,
     )
 
 
@@ -107,7 +102,8 @@ def _generate_mlx_speech_http(text: str):
     from mlx_server_utils import speak_mlx_http, ServerStartError, TTSRequestError
 
     try:
-        speak_mlx_http(text, speed=MLX_SPEED)
+        speed = get_mlx_speed()
+        speak_mlx_http(text, speed=speed)
     except (ServerStartError, TTSRequestError) as e:
         log.warning(f"HTTP TTS failed: {e}, falling back to direct API")
         _generate_mlx_speech_direct(text, play=True)
@@ -295,11 +291,12 @@ def speak_say(message: str):
 def speak_mlx(message: str):
     """Speak using MLX voice cloning (HTTP server or direct API)."""
     try:
+        speed = get_mlx_speed()
         if USE_HTTP_SERVER:
-            log.info(f"MLX TTS (HTTP): speed={MLX_SPEED}")
+            log.info(f"MLX TTS (HTTP): speed={speed}")
             _generate_mlx_speech_http(message)
         else:
-            log.info(f"MLX TTS (direct): speed={MLX_SPEED}")
+            log.info(f"MLX TTS (direct): speed={speed}")
             _generate_mlx_speech_direct(message, play=True)
     except Exception as e:
         log.warning(f"MLX TTS failed: {e}, falling back to macOS say")

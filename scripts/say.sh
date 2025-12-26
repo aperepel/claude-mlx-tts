@@ -29,10 +29,13 @@ sys.path.insert(0, '$SCRIPT_DIR')
 import subprocess
 import os
 import re
+import logging
+
+# Configure logging so mlx_tts_core metrics are visible
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 SAY_VOICE = 'Daniel'
 SAY_RATE = 180
-MLX_SPEED = 1.6
 MLX_VOICE_REF = os.path.join('$PLUGIN_ROOT', 'assets', 'default_voice.wav')
 
 def is_mlx_available():
@@ -49,10 +52,15 @@ def speak_say(message):
 def speak_mlx(message):
     try:
         from mlx_server_utils import speak_mlx_http
-        speak_mlx_http(message, speed=MLX_SPEED)
+        speak_mlx_http(message)  # Uses speed from config
     except Exception as e:
-        print(f'MLX TTS failed: {e}, using macOS say')
-        speak_say(message)
+        print(f'HTTP TTS failed: {e}, trying direct API')
+        try:
+            from mlx_tts_core import speak_mlx as speak_mlx_direct
+            speak_mlx_direct(message)  # Uses mlx_tts_core with metrics
+        except Exception as e2:
+            print(f'Direct TTS failed: {e2}, using macOS say')
+            speak_say(message)
 
 def speak(message):
     if is_mlx_available():
