@@ -22,9 +22,23 @@ Architecture:
     Metrics logged per request:
         TTS: ttft=0.26s gen=2.45s chunks=7 RTF=0.58
 """
+# Suppress startup warnings BEFORE any imports that trigger them
+import os
+import warnings
+
+# Suppress transformers "no PyTorch/TensorFlow" advisory (we use MLX)
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+
+# Suppress webrtcvad's pkg_resources deprecation warning (upstream issue)
+warnings.filterwarnings(
+    "ignore",
+    message="pkg_resources is deprecated as an API",
+    category=UserWarning,
+    module="webrtcvad"
+)
+
 import argparse
 import logging
-import os
 import sys
 import time
 from pathlib import Path
