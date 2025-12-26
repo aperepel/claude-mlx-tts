@@ -598,3 +598,57 @@ class TestIntegration:
         # Cleanup
         cache_path = get_cache_path(voice_ref)
         cache_path.unlink(missing_ok=True)
+
+
+class TestVoiceCachePerformance:
+    """Performance tests for voice caching."""
+
+    def test_cached_load_under_10ms(self):
+        """Loading conditionals from disk cache should be <10ms."""
+        import time
+        from voice_cache import load_conditionals, save_conditionals, get_cache_path
+
+        import mlx.core as mx
+
+        # Create realistic-sized mock conditionals
+        mock_conds = MagicMock()
+        mock_conds.t3 = MagicMock()
+        mock_conds.t3.speaker_emb = mx.random.normal((1, 256))
+        mock_conds.t3.cond_prompt_speech_tokens = mx.random.randint(0, 1000, (1, 512))
+        mock_conds.t3.clap_emb = None
+        mock_conds.t3.cond_prompt_speech_emb = None
+        mock_conds.t3.emotion_adv = None
+        mock_conds.gen = {
+            "prompt_token": mx.random.randint(0, 1000, (1, 256)),
+            "prompt_token_len": mx.array([256]),
+            "prompt_feat": mx.random.normal((1, 128, 80)),
+            "prompt_feat_len": mx.array([128]),
+            "embedding": mx.random.normal((1, 512)),
+        }
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(b"voice for perf test")
+            temp_path = f.name
+
+        try:
+            # Save to cache first
+            cache_path = save_conditionals(mock_conds, temp_path)
+
+            # Warm up (first load may be slower due to imports)
+            _ = load_conditionals(temp_path)
+
+            # Time multiple loads and take median
+            times = []
+            for _ in range(5):
+                start = time.perf_counter()
+                result = load_conditionals(temp_path)
+                elapsed_ms = (time.perf_counter() - start) * 1000
+                times.append(elapsed_ms)
+                assert result is not None
+
+            median_ms = sorted(times)[len(times) // 2]
+            assert median_ms < 10, f"Median load time {median_ms:.2f}ms exceeds 10ms threshold"
+
+        finally:
+            os.unlink(temp_path)
+            cache_path.unlink(missing_ok=True)
