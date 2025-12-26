@@ -1,6 +1,6 @@
 [project]
 name = "claude-mlx-tts"
-version = "1.1.0"
+version = "1.1.1"
 description = "Voice-cloned TTS notifications for Claude Code using MLX Chatterbox Turbo"
 readme = "README.md"
 license = "MIT"

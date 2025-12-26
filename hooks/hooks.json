@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/permission-notify.py",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/run-permission-notify.sh",
             "timeout": 10
           }
         ]
