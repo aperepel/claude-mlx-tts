@@ -12,6 +12,8 @@ When Claude finishes deep work, hear a brief AI-generated summary spoken aloudâ€
 
 ## Features
 
+- **Streaming TTS** - Audio starts in ~250ms instead of waiting for full generation
+- **Dynamic compressor** - Professional-grade audio processing for consistent, punchy volume
 - **AI-powered summaries** - Condenses Claude's response into a 10-15 word spoken update
 - **Attention grabber** - "[clear throat] Attention on deck..." before each summary
 - **Voice cloning** - Uses MLX Chatterbox Turbo (default voice included, or clone your own)
