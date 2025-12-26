@@ -54,11 +54,19 @@ TTS_SERVER_LOG = os.environ.get(
 
 # MLX model to preload
 MLX_MODEL = os.environ.get("MLX_TTS_MODEL", "mlx-community/chatterbox-turbo-fp16")
-MLX_SPEED = float(os.environ.get("MLX_TTS_SPEED", "1.6"))
 MLX_VOICE_REF = os.environ.get(
     "MLX_TTS_VOICE_REF",
     os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
 )
+
+
+def _get_configured_speed() -> float:
+    """Get playback speed from config, with fallback to default."""
+    try:
+        from tts_config import get_playback_speed, DEFAULT_SPEED
+        return get_playback_speed()
+    except ImportError:
+        return 1.3
 
 
 # =============================================================================
@@ -195,7 +203,7 @@ def ensure_server_running(
 
 def speak_mlx_http(
     text: str,
-    speed: float = MLX_SPEED,
+    speed: float | None = None,
     voice: str | None = None,
     timeout: int = 60
 ) -> None:
@@ -220,11 +228,14 @@ def speak_mlx_http(
 
     ensure_server_running()
 
+    # Use configured speed if not explicitly provided
+    actual_speed = speed if speed is not None else _get_configured_speed()
+
     url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
     payload = {
         "input": text,
-        "speed": speed,
+        "speed": actual_speed,
         "model": voice or MLX_MODEL,
         # Don't send ref_audio - server uses pre-warmed voice conditionals
     }
@@ -298,16 +309,17 @@ def stop_server(port: int = TTS_SERVER_PORT) -> bool:
         if result.stdout.strip():
             pids = result.stdout.strip().split("\n")
 
-            # Send SIGTERM first for graceful shutdown
+            # Send SIGINT first - uvicorn handles this more gracefully than SIGTERM
+            # This allows proper cleanup of multiprocessing resources (semaphores)
             for pid in pids:
                 try:
-                    subprocess.run(["kill", "-TERM", pid], check=True)
-                    log.debug(f"Sent SIGTERM to process {pid}")
+                    subprocess.run(["kill", "-INT", pid], check=True)
+                    log.debug(f"Sent SIGINT to process {pid}")
                 except subprocess.CalledProcessError:
                     pass
 
-            # Wait for graceful shutdown
-            time.sleep(2)
+            # Wait for graceful shutdown (uvicorn needs time to cleanup)
+            time.sleep(3)
 
             # Force kill any remaining processes
             for pid in pids:
