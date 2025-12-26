@@ -82,47 +82,50 @@ class TestGenerateSpeechStreaming:
         sig = inspect.signature(generate_speech)
         assert "streaming_interval" in sig.parameters
 
-    def test_generate_speech_passes_stream_to_mlx(self):
-        """generate_speech should pass stream=True to generate_audio."""
+    def test_generate_speech_passes_stream_to_model(self):
+        """generate_speech should pass stream=True to model.generate()."""
         from mlx_tts_core import generate_speech
 
-        with patch("mlx_audio.tts.generate.generate_audio") as mock_gen:
-            model = MagicMock()
-            model.sample_rate = 24000
+        model = MagicMock()
+        model.sample_rate = 24000
+        model.generate.return_value = iter([])  # Empty generator
 
+        with patch("mlx_tts_core.AudioPlayer"):
             generate_speech("Test", model=model, play=False, stream=True)
 
-            mock_gen.assert_called_once()
-            call_kwargs = mock_gen.call_args[1]
-            assert call_kwargs.get("stream") is True
+        model.generate.assert_called_once()
+        call_kwargs = model.generate.call_args[1]
+        assert call_kwargs.get("stream") is True
 
-    def test_generate_speech_passes_streaming_interval_to_mlx(self):
-        """generate_speech should pass streaming_interval to generate_audio."""
+    def test_generate_speech_passes_streaming_interval_to_model(self):
+        """generate_speech should pass streaming_interval to model.generate()."""
         from mlx_tts_core import generate_speech
 
-        with patch("mlx_audio.tts.generate.generate_audio") as mock_gen:
-            model = MagicMock()
-            model.sample_rate = 24000
+        model = MagicMock()
+        model.sample_rate = 24000
+        model.generate.return_value = iter([])
 
-            generate_speech("Test", model=model, play=False, streaming_interval=0.5)
+        with patch("mlx_tts_core.AudioPlayer"):
+            generate_speech("Test", model=model, play=False, stream=True, streaming_interval=0.5)
 
-            mock_gen.assert_called_once()
-            call_kwargs = mock_gen.call_args[1]
-            assert call_kwargs.get("streaming_interval") == 0.5
+        model.generate.assert_called_once()
+        call_kwargs = model.generate.call_args[1]
+        assert call_kwargs.get("streaming_interval") == 0.5
 
     def test_generate_speech_uses_config_streaming_interval(self):
         """generate_speech should use config value when streaming_interval not specified."""
-        with patch("mlx_audio.tts.generate.generate_audio") as mock_gen:
-            with patch("mlx_tts_core._get_configured_streaming_interval", return_value=0.75):
-                from mlx_tts_core import generate_speech
+        with patch("mlx_tts_core._get_configured_streaming_interval", return_value=0.75):
+            from mlx_tts_core import generate_speech
 
-                model = MagicMock()
-                model.sample_rate = 24000
+            model = MagicMock()
+            model.sample_rate = 24000
+            model.generate.return_value = iter([])
 
-                generate_speech("Test", model=model, play=False)
+            with patch("mlx_tts_core.AudioPlayer"):
+                generate_speech("Test", model=model, play=False, stream=True)
 
-                call_kwargs = mock_gen.call_args[1]
-                assert call_kwargs.get("streaming_interval") == 0.75
+            call_kwargs = model.generate.call_args[1]
+            assert call_kwargs.get("streaming_interval") == 0.75
 
     def test_generate_speech_stream_false_disables_streaming(self):
         """generate_speech with stream=False should not pass streaming params."""
@@ -227,14 +230,15 @@ class TestStreamingPerformance:
         assert DEFAULT_STREAMING_INTERVAL == 0.5
         assert CONFIG_DEFAULT == 0.5
 
-        with patch("mlx_audio.tts.generate.generate_audio") as mock_gen:
-            # Mock config to return default value (isolate from stored config)
-            with patch("mlx_tts_core._get_configured_streaming_interval", return_value=0.5):
-                model = MagicMock()
-                model.sample_rate = 24000
+        # Mock config to return default value (isolate from stored config)
+        with patch("mlx_tts_core._get_configured_streaming_interval", return_value=0.5):
+            model = MagicMock()
+            model.sample_rate = 24000
+            model.generate.return_value = iter([])
 
+            with patch("mlx_tts_core.AudioPlayer"):
                 # When not specifying interval, should use config default (0.5s)
                 generate_speech("Test", model=model, play=True, stream=True)
 
-                call_kwargs = mock_gen.call_args[1]
-                assert call_kwargs["streaming_interval"] == 0.5
+            call_kwargs = model.generate.call_args[1]
+            assert call_kwargs["streaming_interval"] == 0.5

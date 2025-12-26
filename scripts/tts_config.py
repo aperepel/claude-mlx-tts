@@ -39,12 +39,28 @@ DEFAULT_STREAMING_INTERVAL = 0.5  # Target: 0.5s for ~260ms TTFT
 MIN_STREAMING_INTERVAL = 0.1
 MAX_STREAMING_INTERVAL = 5.0
 
+# Compressor configuration (notification_punch preset)
+DEFAULT_COMPRESSOR = {
+    "enabled": True,
+    "threshold_db": -18,
+    "ratio": 3.0,
+    "attack_ms": 3,
+    "release_ms": 50,
+    "limiter_threshold_db": -0.5,
+    "limiter_release_ms": 40,
+    "gain_db": 8,
+}
+
 # Default configuration values
 DEFAULT_CONFIG = {
     "profiles": {
-        "default": {"speed": DEFAULT_SPEED, "streaming_interval": DEFAULT_STREAMING_INTERVAL}
+        "default": {
+            "speed": DEFAULT_SPEED,
+            "streaming_interval": DEFAULT_STREAMING_INTERVAL,
+        }
     },
     "active_profile": "default",
+    "compressor": DEFAULT_COMPRESSOR.copy(),
 }
 
 
@@ -164,6 +180,37 @@ def set_streaming_interval(interval: float, profile: str = None) -> None:
 
     config["profiles"][profile]["streaming_interval"] = interval
     save_config(config)
+
+
+def get_compressor_config() -> dict:
+    """Get compressor configuration. Re-reads from disk on each call."""
+    config = load_config()
+    compressor = config.get("compressor", {})
+    # Merge with defaults for any missing keys
+    return {**DEFAULT_COMPRESSOR, **compressor}
+
+
+def set_compressor_setting(key: str, value: float | bool) -> None:
+    """Set a single compressor setting."""
+    if key not in DEFAULT_COMPRESSOR:
+        valid_keys = ", ".join(DEFAULT_COMPRESSOR.keys())
+        raise ValueError(f"Invalid compressor key '{key}'. Valid keys: {valid_keys}")
+
+    config = load_config()
+    if "compressor" not in config:
+        config["compressor"] = DEFAULT_COMPRESSOR.copy()
+    config["compressor"][key] = value
+    save_config(config)
+
+
+def set_compressor_gain(gain_db: float) -> None:
+    """Set compressor makeup gain in dB."""
+    set_compressor_setting("gain_db", gain_db)
+
+
+def set_compressor_enabled(enabled: bool) -> None:
+    """Enable or disable the compressor."""
+    set_compressor_setting("enabled", enabled)
 
 
 def format_current_config() -> str:

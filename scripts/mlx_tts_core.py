@@ -246,7 +246,8 @@ def _generate_streaming_with_metrics(
     Generate speech with streaming and capture timing metrics.
 
     Uses direct model.generate() + AudioPlayer for streaming playback
-    while capturing TTFT and other metrics.
+    while capturing TTFT and other metrics. Audio is processed through
+    compressor/limiter for consistent volume levels.
     """
     from mlx_audio.tts.generate import load_audio
 
@@ -257,6 +258,16 @@ def _generate_streaming_with_metrics(
 
     # Initialize player if needed
     player = AudioPlayer(sample_rate=model.sample_rate) if play else None
+
+    # Initialize audio processor for compression/limiting
+    # Creates stateful processor that maintains compressor envelope across chunks
+    audio_processor = None
+    try:
+        from audio_processor import create_processor
+        audio_processor = create_processor(sample_rate=model.sample_rate)
+        log.debug("Audio processor initialized for streaming")
+    except ImportError:
+        log.debug("audio_processor not available, skipping compression")
 
     # Metrics tracking
     gen_start = time.perf_counter()
@@ -283,7 +294,11 @@ def _generate_streaming_with_metrics(
             last_rtf = result.real_time_factor
 
         if player:
-            player.queue_audio(result.audio)
+            # Apply compression/limiting before playback
+            audio_chunk = result.audio
+            if audio_processor is not None:
+                audio_chunk = audio_processor(audio_chunk)
+            player.queue_audio(audio_chunk)
 
     gen_time = time.perf_counter() - gen_start
 
