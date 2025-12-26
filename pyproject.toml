@@ -40,3 +40,8 @@ package = false
 markers = [
     "integration: marks tests that require audio hardware (deselect with '-m \"not integration\"')",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

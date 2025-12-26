@@ -311,6 +311,11 @@ mlx = [
     { name = "webrtcvad" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "einops", marker = "extra == 'mlx'", specifier = ">=0.8" },
@@ -327,6 +332,9 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'mlx'", specifier = ">=0.30" },
     { name = "webrtcvad", marker = "extra == 'mlx'", specifier = ">=2.0.10" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.0.2" }]
 
 [[package]]
 name = "click"

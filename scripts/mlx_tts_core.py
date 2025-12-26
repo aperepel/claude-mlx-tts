@@ -29,7 +29,31 @@ MLX_VOICE_REF = os.environ.get(
     "MLX_TTS_VOICE_REF",
     os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
 )
-MLX_SPEED = float(os.environ.get("MLX_TTS_SPEED", "1.6"))
+
+# Default speed fallback (config takes precedence)
+DEFAULT_SPEED = 1.3
+
+
+def _get_configured_speed() -> float:
+    """Get playback speed from config, with fallback to default."""
+    try:
+        from tts_config import get_playback_speed
+        return get_playback_speed()
+    except ImportError:
+        return DEFAULT_SPEED
+
+
+# Default streaming interval fallback
+DEFAULT_STREAMING_INTERVAL = 0.5
+
+
+def _get_configured_streaming_interval() -> float:
+    """Get streaming interval from config, with fallback to default."""
+    try:
+        from tts_config import get_streaming_interval
+        return get_streaming_interval()
+    except ImportError:
+        return DEFAULT_STREAMING_INTERVAL
 
 # Module-level model cache
 _cached_model = None
@@ -101,6 +125,8 @@ def generate_speech(
     play: bool = True,
     save_path: str | None = None,
     verbose: bool = False,
+    stream: bool = True,
+    streaming_interval: float | None = None,
 ) -> None:
     """
     Generate speech from text using MLX TTS.
@@ -110,10 +136,12 @@ def generate_speech(
         model: Pre-loaded model (uses cached model if None).
         ref_audio: Path to voice reference WAV file.
         ref_text: Transcript of reference audio.
-        speed: Speech speed multiplier (default MLX_SPEED).
+        speed: Speech speed multiplier (default from config).
         play: Whether to play audio immediately.
         save_path: Optional path to save audio file.
         verbose: Enable verbose logging from mlx_audio.
+        stream: Enable streaming for reduced time-to-first-audio.
+        streaming_interval: Chunk interval in seconds (default 0.5s from config).
     """
     if not text or not text.strip():
         log.warning("Empty text provided, skipping generation")
@@ -131,37 +159,53 @@ def generate_speech(
 
     # Set defaults
     actual_ref_audio = ref_audio or MLX_VOICE_REF
-    actual_speed = speed if speed is not None else MLX_SPEED
+    actual_speed = speed if speed is not None else _get_configured_speed()
+    actual_streaming_interval = streaming_interval if streaming_interval is not None else _get_configured_streaming_interval()
 
     # Verify voice reference exists
     if not os.path.exists(actual_ref_audio):
         log.warning(f"Voice reference not found: {actual_ref_audio}")
 
-    log.debug(f"Generating speech: '{text[:50]}...' (speed={actual_speed}, play={play})")
+    # Warn about save_path incompatibility with streaming
+    if stream and save_path:
+        log.warning("save_path is ignored in streaming mode - audio plays but cannot be saved")
+
+    log.debug(f"Generating speech: '{text[:50]}...' (speed={actual_speed}, play={play}, stream={stream})")
 
     # Suppress tokenizers parallelism warning
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     try:
-        # Determine file_prefix from save_path
+        # Determine file_prefix from save_path (only for non-streaming mode)
         file_prefix = None
-        if save_path:
+        if save_path and not stream:
             # generate_audio expects prefix without extension
             file_prefix = save_path.rsplit(".", 1)[0] if "." in save_path else save_path
 
-        generate_audio(
-            text=text,
-            model=model,
-            ref_audio=actual_ref_audio,
-            ref_text=ref_text,
-            speed=actual_speed,
-            play=play,
-            file_prefix=file_prefix,
-            verbose=verbose,
-        )
+        # Build generation kwargs
+        gen_kwargs = {
+            "text": text,
+            "model": model,
+            "ref_audio": actual_ref_audio,
+            "ref_text": ref_text,
+            "speed": actual_speed,
+            "play": play,
+            "verbose": verbose,
+        }
+
+        # Add streaming parameters if enabled
+        if stream:
+            gen_kwargs["stream"] = True
+            gen_kwargs["streaming_interval"] = actual_streaming_interval
+        else:
+            gen_kwargs["stream"] = False
+            if file_prefix:
+                gen_kwargs["file_prefix"] = file_prefix
+
+        generate_audio(**gen_kwargs)
 
         # mlx_audio adds _000 suffix to output files, rename to requested path
-        if save_path and file_prefix:
+        if save_path and file_prefix and not stream:
             actual_output = f"{file_prefix}_000.wav"
             if os.path.exists(actual_output) and actual_output != save_path:
                 import shutil
@@ -178,23 +222,27 @@ def speak_mlx(
     message: str,
     speed: float | None = None,
     ref_audio: str | None = None,
+    stream: bool = True,
 ) -> None:
     """
     High-level function to speak a message using MLX TTS.
 
     This is the main entry point for simple TTS playback.
     Automatically uses cached model for fast subsequent calls.
+    Streaming is enabled by default for lowest latency.
 
     Args:
         message: Text to speak.
-        speed: Speech speed multiplier (default MLX_SPEED).
+        speed: Speech speed multiplier (default from config).
         ref_audio: Optional custom voice reference.
+        stream: Enable streaming for reduced time-to-first-audio (default True).
     """
     generate_speech(
         text=message,
         ref_audio=ref_audio,
         speed=speed,
         play=True,
+        stream=stream,
     )
 
 
