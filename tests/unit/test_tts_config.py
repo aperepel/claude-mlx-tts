@@ -372,3 +372,403 @@ class TestTtsConfigCli:
             assert "Normal" in result.stdout
             assert "Fast" in result.stdout
             assert "Turbo" in result.stdout
+
+
+# =============================================================================
+# NEW TESTS FOR PER-VOICE SCHEMA (TDD - these should FAIL initially)
+# =============================================================================
+
+
+class TestVoiceDiscovery:
+    """Tests for discovering voice files from assets directory."""
+
+    def test_discover_voices_finds_wav_files(self):
+        """discover_voices should find all .wav files in assets directory."""
+        from tts_config import discover_voices
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "voice1.wav").touch()
+            (assets_dir / "voice2.wav").touch()
+            (assets_dir / "not_a_voice.txt").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                voices = discover_voices()
+
+            assert "voice1" in voices
+            assert "voice2" in voices
+            assert "not_a_voice" not in voices
+
+    def test_discover_voices_returns_empty_when_no_assets(self):
+        """discover_voices should return empty list when assets dir doesn't exist."""
+        from tts_config import discover_voices
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                voices = discover_voices()
+
+            assert voices == []
+
+    def test_discover_voices_returns_empty_when_no_wav_files(self):
+        """discover_voices should return empty list when no .wav files exist."""
+        from tts_config import discover_voices
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "readme.txt").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                voices = discover_voices()
+
+            assert voices == []
+
+    def test_discover_voices_strips_wav_extension(self):
+        """discover_voices should return voice names without .wav extension."""
+        from tts_config import discover_voices
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "my_voice.wav").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                voices = discover_voices()
+
+            assert "my_voice" in voices
+            assert "my_voice.wav" not in voices
+
+
+class TestActiveVoice:
+    """Tests for active voice management."""
+
+    def test_get_active_voice_returns_default_when_not_set(self):
+        """get_active_voice should return 'default_voice' when not configured."""
+        from tts_config import get_active_voice
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"profiles": {}, "active_profile": "default"}
+            voice = get_active_voice()
+
+        assert voice == "default_voice"
+
+    def test_get_active_voice_returns_configured_voice(self):
+        """get_active_voice should return the configured active voice."""
+        from tts_config import get_active_voice
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"active_voice": "my_custom_voice"}
+            voice = get_active_voice()
+
+        assert voice == "my_custom_voice"
+
+    def test_set_active_voice_saves_config(self):
+        """set_active_voice should save the voice to config."""
+        from tts_config import set_active_voice
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save, \
+             patch("tts_config.discover_voices") as mock_discover:
+            mock_load.return_value = {"active_voice": "default_voice"}
+            mock_discover.return_value = ["default_voice", "my_voice"]
+            set_active_voice("my_voice")
+
+            mock_save.assert_called_once()
+            saved_config = mock_save.call_args[0][0]
+            assert saved_config["active_voice"] == "my_voice"
+
+    def test_set_active_voice_validates_voice_exists(self):
+        """set_active_voice should reject voices that don't exist."""
+        from tts_config import set_active_voice
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.discover_voices") as mock_discover:
+            mock_load.return_value = {"active_voice": "default_voice"}
+            mock_discover.return_value = ["default_voice"]
+
+            with pytest.raises(ValueError, match="not found"):
+                set_active_voice("nonexistent_voice")
+
+
+class TestSecureVoiceNameResolution:
+    """Tests for secure voice name validation."""
+
+    def test_resolve_voice_path_returns_valid_path(self):
+        """resolve_voice_path should return full path for valid voice."""
+        from tts_config import resolve_voice_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            voice_file = assets_dir / "my_voice.wav"
+            voice_file.touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                path = resolve_voice_path("my_voice")
+
+            assert path == voice_file
+
+    def test_resolve_voice_path_rejects_path_traversal(self):
+        """resolve_voice_path should reject path traversal attempts."""
+        from tts_config import resolve_voice_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                with pytest.raises(ValueError, match="Invalid voice name"):
+                    resolve_voice_path("../../../etc/passwd")
+
+    def test_resolve_voice_path_rejects_absolute_paths(self):
+        """resolve_voice_path should reject absolute paths."""
+        from tts_config import resolve_voice_path
+
+        with pytest.raises(ValueError, match="Invalid voice name"):
+            resolve_voice_path("/etc/passwd")
+
+    def test_resolve_voice_path_rejects_special_characters(self):
+        """resolve_voice_path should reject names with special characters."""
+        from tts_config import resolve_voice_path
+
+        with pytest.raises(ValueError, match="Invalid voice name"):
+            resolve_voice_path("voice;rm -rf /")
+
+    def test_resolve_voice_path_rejects_nonexistent_voice(self):
+        """resolve_voice_path should reject voice files that don't exist."""
+        from tts_config import resolve_voice_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                with pytest.raises(ValueError, match="not found"):
+                    resolve_voice_path("nonexistent_voice")
+
+    def test_resolve_voice_path_rejects_symlink_escape(self):
+        """resolve_voice_path should reject symlinks pointing outside assets."""
+        from tts_config import resolve_voice_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            # Create a file outside assets
+            outside_file = Path(tmpdir) / "secret.wav"
+            outside_file.touch()
+            # Create a symlink inside assets pointing to the outside file
+            symlink = assets_dir / "evil_voice.wav"
+            symlink.symlink_to(outside_file)
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                with pytest.raises(ValueError, match="Invalid voice name"):
+                    resolve_voice_path("evil_voice")
+
+
+class TestPerVoiceConfig:
+    """Tests for per-voice compressor/limiter configuration."""
+
+    def test_get_voice_config_returns_defaults_for_unconfigured_voice(self):
+        """get_voice_config should return default settings for unconfigured voice."""
+        from tts_config import get_voice_config, DEFAULT_COMPRESSOR
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"voices": {}}
+            config = get_voice_config("my_voice")
+
+        assert config["compressor"] == DEFAULT_COMPRESSOR
+
+    def test_get_voice_config_returns_voice_specific_settings(self):
+        """get_voice_config should return voice-specific settings when configured."""
+        from tts_config import get_voice_config
+
+        custom_compressor = {"enabled": False, "gain_db": 12}
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "voices": {
+                    "my_voice": {"compressor": custom_compressor}
+                }
+            }
+            config = get_voice_config("my_voice")
+
+        assert config["compressor"]["enabled"] is False
+        assert config["compressor"]["gain_db"] == 12
+
+    def test_set_voice_config_saves_voice_settings(self):
+        """set_voice_config should save settings for a specific voice."""
+        from tts_config import set_voice_config
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {"voices": {}}
+            set_voice_config("my_voice", {"compressor": {"gain_db": 10}})
+
+            mock_save.assert_called_once()
+            saved_config = mock_save.call_args[0][0]
+            assert saved_config["voices"]["my_voice"]["compressor"]["gain_db"] == 10
+
+    def test_set_voice_config_merges_with_existing(self):
+        """set_voice_config should merge new settings with existing voice config."""
+        from tts_config import set_voice_config
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "voices": {
+                    "my_voice": {"compressor": {"enabled": True, "gain_db": 5}}
+                }
+            }
+            set_voice_config("my_voice", {"compressor": {"gain_db": 10}})
+
+            mock_save.assert_called_once()
+            saved_config = mock_save.call_args[0][0]
+            # gain_db should be updated
+            assert saved_config["voices"]["my_voice"]["compressor"]["gain_db"] == 10
+            # enabled should be preserved
+            assert saved_config["voices"]["my_voice"]["compressor"]["enabled"] is True
+
+
+class TestCascadingConfigResolution:
+    """Tests for cascading config: defaults -> voice-specific overrides."""
+
+    def test_get_effective_compressor_uses_defaults_when_no_voice_config(self):
+        """get_effective_compressor should use defaults when voice has no config."""
+        from tts_config import get_effective_compressor, DEFAULT_COMPRESSOR
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"voices": {}}
+            compressor = get_effective_compressor("unconfigured_voice")
+
+        assert compressor == DEFAULT_COMPRESSOR
+
+    def test_get_effective_compressor_overrides_with_voice_settings(self):
+        """get_effective_compressor should override defaults with voice settings."""
+        from tts_config import get_effective_compressor, DEFAULT_COMPRESSOR
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "voices": {
+                    "my_voice": {"compressor": {"gain_db": 15, "enabled": False}}
+                }
+            }
+            compressor = get_effective_compressor("my_voice")
+
+        # Voice-specific overrides
+        assert compressor["gain_db"] == 15
+        assert compressor["enabled"] is False
+        # Defaults for unspecified keys
+        assert compressor["threshold_db"] == DEFAULT_COMPRESSOR["threshold_db"]
+        assert compressor["ratio"] == DEFAULT_COMPRESSOR["ratio"]
+
+    def test_get_effective_compressor_for_active_voice(self):
+        """get_effective_compressor with no arg should use active voice."""
+        from tts_config import get_effective_compressor
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {
+                    "my_voice": {"compressor": {"gain_db": 20}}
+                }
+            }
+            compressor = get_effective_compressor()
+
+        assert compressor["gain_db"] == 20
+
+
+class TestDefaultLimiterConfig:
+    """Tests for limiter configuration (separate from compressor)."""
+
+    def test_default_limiter_config_exists(self):
+        """DEFAULT_LIMITER should be defined with sensible defaults."""
+        from tts_config import DEFAULT_LIMITER
+
+        assert "enabled" in DEFAULT_LIMITER
+        assert "threshold_db" in DEFAULT_LIMITER
+        assert "release_ms" in DEFAULT_LIMITER
+
+    def test_get_effective_limiter_uses_defaults(self):
+        """get_effective_limiter should use defaults for unconfigured voice."""
+        from tts_config import get_effective_limiter, DEFAULT_LIMITER
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"voices": {}}
+            limiter = get_effective_limiter("unconfigured_voice")
+
+        assert limiter == DEFAULT_LIMITER
+
+    def test_get_effective_limiter_overrides_with_voice_settings(self):
+        """get_effective_limiter should override defaults with voice settings."""
+        from tts_config import get_effective_limiter, DEFAULT_LIMITER
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "voices": {
+                    "my_voice": {"limiter": {"threshold_db": -1.0}}
+                }
+            }
+            limiter = get_effective_limiter("my_voice")
+
+        assert limiter["threshold_db"] == -1.0
+        # Defaults for unspecified keys
+        assert limiter["release_ms"] == DEFAULT_LIMITER["release_ms"]
+
+
+class TestGlobalLimiterConfig:
+    """Tests for global limiter configuration (get_limiter_config, set_limiter_setting)."""
+
+    def test_get_limiter_config_returns_defaults_when_not_set(self):
+        """get_limiter_config should return defaults when no limiter config exists."""
+        from tts_config import get_limiter_config, DEFAULT_LIMITER
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {}
+            config = get_limiter_config()
+
+        assert config == DEFAULT_LIMITER
+
+    def test_get_limiter_config_merges_with_defaults(self):
+        """get_limiter_config should merge file config with defaults."""
+        from tts_config import get_limiter_config, DEFAULT_LIMITER
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"limiter": {"threshold_db": -5.0}}
+            config = get_limiter_config()
+
+        assert config["threshold_db"] == -5.0
+        assert config["release_ms"] == DEFAULT_LIMITER["release_ms"]
+        assert config["enabled"] == DEFAULT_LIMITER["enabled"]
+
+    def test_set_limiter_setting_saves_config(self):
+        """set_limiter_setting should save the setting to config."""
+        from tts_config import set_limiter_setting
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {}
+            set_limiter_setting("threshold_db", -3.0)
+
+            mock_save.assert_called_once()
+            saved_config = mock_save.call_args[0][0]
+            assert saved_config["limiter"]["threshold_db"] == -3.0
+
+    def test_set_limiter_setting_validates_key(self):
+        """set_limiter_setting should reject invalid keys."""
+        from tts_config import set_limiter_setting
+
+        with pytest.raises(ValueError, match="Invalid limiter key"):
+            set_limiter_setting("invalid_key", 1.0)
+
+    def test_set_limiter_setting_enabled(self):
+        """set_limiter_setting should accept boolean for enabled."""
+        from tts_config import set_limiter_setting
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {}
+            set_limiter_setting("enabled", False)
+
+            mock_save.assert_called_once()
+            saved_config = mock_save.call_args[0][0]
+            assert saved_config["limiter"]["enabled"] is False

@@ -7,15 +7,29 @@ Config is stored at ${PLUGIN_ROOT}/.config/config.json
 Structure:
     {
         "profiles": {
-            "default": {"speed": 1.3}
+            "default": {"speed": 1.3, "streaming_interval": 0.5}
         },
-        "active_profile": "default"
+        "active_profile": "default",
+        "active_voice": "default_voice",
+        "voices": {
+            "my_voice": {
+                "compressor": {"gain_db": 10, "enabled": true},
+                "limiter": {"threshold_db": -1.0}
+            }
+        }
     }
+
+Features:
+- Per-voice compressor/limiter settings
+- Voice discovery from assets/*.wav
+- Cascading config resolution (defaults -> voice-specific)
+- Secure voice name validation
 
 Can be overridden with TTS_CONFIG_PATH environment variable for testing.
 """
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -46,10 +60,18 @@ DEFAULT_COMPRESSOR = {
     "ratio": 3.0,
     "attack_ms": 3,
     "release_ms": 50,
-    "limiter_threshold_db": -0.5,
-    "limiter_release_ms": 40,
     "gain_db": 8,
 }
+
+# Limiter configuration (separate from compressor)
+DEFAULT_LIMITER = {
+    "enabled": True,
+    "threshold_db": -0.5,
+    "release_ms": 40,
+}
+
+# Valid characters for voice names (security)
+VOICE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
 
 # Default configuration values
 DEFAULT_CONFIG = {
@@ -213,6 +235,185 @@ def set_compressor_enabled(enabled: bool) -> None:
     set_compressor_setting("enabled", enabled)
 
 
+def get_limiter_config() -> dict:
+    """Get limiter configuration. Re-reads from disk on each call."""
+    config = load_config()
+    limiter = config.get("limiter", {})
+    # Merge with defaults for any missing keys
+    return {**DEFAULT_LIMITER, **limiter}
+
+
+def set_limiter_setting(key: str, value: float | bool) -> None:
+    """Set a single limiter setting."""
+    if key not in DEFAULT_LIMITER:
+        valid_keys = ", ".join(DEFAULT_LIMITER.keys())
+        raise ValueError(f"Invalid limiter key '{key}'. Valid keys: {valid_keys}")
+
+    config = load_config()
+    if "limiter" not in config:
+        config["limiter"] = DEFAULT_LIMITER.copy()
+    config["limiter"][key] = value
+    save_config(config)
+
+
+# =============================================================================
+# Voice Discovery and Management
+# =============================================================================
+
+
+def discover_voices() -> list[str]:
+    """Discover all voice files in the assets directory.
+
+    Returns list of voice names (without .wav extension).
+    """
+    assets_dir = _PLUGIN_ROOT / "assets"
+    if not assets_dir.exists():
+        return []
+
+    voices = []
+    for wav_file in assets_dir.glob("*.wav"):
+        voices.append(wav_file.stem)
+    return sorted(voices)
+
+
+def get_active_voice() -> str:
+    """Get the currently active voice name."""
+    config = load_config()
+    return config.get("active_voice", "default_voice")
+
+
+def set_active_voice(voice_name: str) -> None:
+    """Set the active voice. Validates that voice exists."""
+    available_voices = discover_voices()
+    if voice_name not in available_voices:
+        raise ValueError(f"Voice '{voice_name}' not found. Available: {available_voices}")
+
+    config = load_config()
+    config["active_voice"] = voice_name
+    save_config(config)
+
+
+def resolve_voice_path(voice_name: str) -> Path:
+    """Securely resolve a voice name to its file path.
+
+    Validates:
+    - No path traversal (../)
+    - No absolute paths
+    - Only alphanumeric, underscore, hyphen
+    - File must exist
+    - Resolved path stays within assets directory (symlink-safe)
+
+    Returns the full Path to the .wav file.
+    Raises ValueError for invalid or non-existent voices.
+    """
+    # Reject absolute paths
+    if voice_name.startswith("/"):
+        raise ValueError(f"Invalid voice name: {voice_name}")
+
+    # Reject path traversal and special characters
+    if not VOICE_NAME_PATTERN.match(voice_name):
+        raise ValueError(f"Invalid voice name: {voice_name}")
+
+    # Construct path and verify it exists
+    assets_dir = _PLUGIN_ROOT / "assets"
+    voice_path = assets_dir / f"{voice_name}.wav"
+    if not voice_path.exists():
+        raise ValueError(f"Voice '{voice_name}' not found at {voice_path}")
+
+    # Symlink-safe: ensure resolved path is within assets directory
+    resolved = voice_path.resolve()
+    resolved_assets = assets_dir.resolve()
+    if not str(resolved).startswith(str(resolved_assets) + "/"):
+        raise ValueError(f"Invalid voice name: {voice_name}")
+
+    return voice_path
+
+
+# =============================================================================
+# Per-Voice Configuration
+# =============================================================================
+
+
+def get_voice_config(voice_name: str) -> dict:
+    """Get configuration for a specific voice.
+
+    Returns voice-specific settings merged with defaults.
+    """
+    config = load_config()
+    voices = config.get("voices", {})
+    voice_config = voices.get(voice_name, {})
+
+    # Merge with defaults
+    return {
+        "compressor": {**DEFAULT_COMPRESSOR, **voice_config.get("compressor", {})},
+        "limiter": {**DEFAULT_LIMITER, **voice_config.get("limiter", {})},
+    }
+
+
+def set_voice_config(voice_name: str, settings: dict) -> None:
+    """Set configuration for a specific voice.
+
+    Merges new settings with existing voice config.
+    """
+    config = load_config()
+
+    if "voices" not in config:
+        config["voices"] = {}
+
+    if voice_name not in config["voices"]:
+        config["voices"][voice_name] = {}
+
+    # Deep merge settings
+    for key, value in settings.items():
+        if key not in config["voices"][voice_name]:
+            config["voices"][voice_name][key] = {}
+        if isinstance(value, dict):
+            config["voices"][voice_name][key] = {
+                **config["voices"][voice_name].get(key, {}),
+                **value
+            }
+        else:
+            config["voices"][voice_name][key] = value
+
+    save_config(config)
+
+
+def get_effective_compressor(voice_name: str = None) -> dict:
+    """Get effective compressor settings for a voice.
+
+    Uses cascading resolution: defaults -> voice-specific overrides.
+    If voice_name is None, uses the active voice.
+    """
+    if voice_name is None:
+        voice_name = get_active_voice()
+
+    config = load_config()
+    voices = config.get("voices", {})
+    voice_config = voices.get(voice_name, {})
+    voice_compressor = voice_config.get("compressor", {})
+
+    # Cascade: defaults <- voice-specific
+    return {**DEFAULT_COMPRESSOR, **voice_compressor}
+
+
+def get_effective_limiter(voice_name: str = None) -> dict:
+    """Get effective limiter settings for a voice.
+
+    Uses cascading resolution: defaults -> voice-specific overrides.
+    If voice_name is None, uses the active voice.
+    """
+    if voice_name is None:
+        voice_name = get_active_voice()
+
+    config = load_config()
+    voices = config.get("voices", {})
+    voice_config = voices.get(voice_name, {})
+    voice_limiter = voice_config.get("limiter", {})
+
+    # Cascade: defaults <- voice-specific
+    return {**DEFAULT_LIMITER, **voice_limiter}
+
+
 def format_current_config() -> str:
     """Format the current configuration for display."""
     config = load_config()
@@ -226,6 +427,33 @@ def cmd_show() -> None:
     """Show current configuration."""
     print("Current TTS Configuration:")
     print(format_current_config())
+
+
+def cmd_status() -> None:
+    """Show current configuration and how to change it."""
+    config = load_config()
+    config_path = get_config_path()
+    profile = config.get("active_profile", "default")
+    speed = get_profile_speed(profile)
+    speed_label = SPEED_PRESETS.get(speed, "Custom")
+    interval = get_streaming_interval(profile)
+    compressor = get_compressor_config()
+
+    print("TTS Configuration Status")
+    print("=" * 40)
+    print(f"Config file: {config_path}")
+    print(f"Active profile: {profile}")
+    print()
+    print("Playback Settings:")
+    print(f"  Speed: {speed}x ({speed_label})")
+    print(f"  Streaming interval: {interval}s")
+    print()
+    print("Compressor:")
+    print(f"  Enabled: {compressor['enabled']}")
+    print(f"  Gain: {compressor['gain_db']} dB")
+    print()
+    print("To configure TTS settings, run:")
+    print("  uv run --directory $CLAUDE_PLUGIN_ROOT python scripts/tts_configurator.py")
 
 
 def cmd_set(speed_str: str) -> None:
@@ -267,12 +495,14 @@ def cmd_wizard() -> None:
 def main() -> None:
     """CLI entry point."""
     if len(sys.argv) < 2:
-        cmd_show()
+        cmd_status()
         return
 
     command = sys.argv[1].lower()
 
-    if command == "show":
+    if command == "status":
+        cmd_status()
+    elif command == "show":
         cmd_show()
     elif command == "set":
         if len(sys.argv) < 3:
@@ -283,7 +513,7 @@ def main() -> None:
         cmd_wizard()
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
-        print("Usage: tts-config.py [show|set <speed>|wizard]", file=sys.stderr)
+        print("Usage: tts-config.py [status|show|set <speed>|wizard]", file=sys.stderr)
         sys.exit(1)
 
 

@@ -41,10 +41,12 @@ from tts_config import (
     get_compressor_config,
     get_effective_compressor,
     get_effective_limiter,
+    get_limiter_config,
     get_playback_speed,
     get_streaming_interval,
     set_active_voice,
     set_compressor_setting,
+    set_limiter_setting,
     set_playback_speed,
     set_streaming_interval,
     set_voice_config,
@@ -79,6 +81,22 @@ COMPRESSOR_PRESETS = {
         "attack_ms": 8,
         "release_ms": 80,
         "gain_db": 10,
+    },
+}
+
+# Limiter presets
+LIMITER_PRESETS = {
+    "Transparent": {
+        "threshold_db": -1.0,
+        "release_ms": 100,
+    },
+    "Brick Wall": {
+        "threshold_db": -0.3,
+        "release_ms": 20,
+    },
+    "Soft Clip": {
+        "threshold_db": -3.0,
+        "release_ms": 50,
     },
 }
 
@@ -159,95 +177,33 @@ class VoiceSelector(Container):
                 self.notify(str(e), severity="error")
 
 
-class EnvelopeCanvas(Static):
-    """Visual representation of compressor attack/release envelope."""
+class FormField(Horizontal):
+    """Form field with label, numeric input, and unit suffix."""
 
     DEFAULT_CSS = """
-    EnvelopeCanvas {
-        height: 5;
-        width: 100%;
-        border: solid $primary;
-        padding: 0 1;
-    }
-    """
-
-    attack_ms = reactive(3.0)
-    release_ms = reactive(50.0)
-
-    def render(self) -> str:
-        """Render the envelope as ASCII art."""
-        width = 40
-        height = 3
-
-        # Normalize attack and release to canvas width
-        # Attack: 1-50ms maps to 2-10 chars
-        # Release: 10-500ms maps to 5-25 chars
-        attack_chars = max(2, min(10, int(self.attack_ms / 5)))
-        release_chars = max(5, min(25, int(self.release_ms / 20)))
-
-        # Build the envelope visualization
-        lines = []
-
-        # Top line: peak
-        peak_pos = attack_chars
-        line0 = " " * (peak_pos - 1) + "╭" + "─" * 3 + "╮"
-        line0 = line0[:width].ljust(width)
-        lines.append(line0)
-
-        # Middle line: attack slope and release slope
-        line1 = "╱" * attack_chars + "███" + "╲" * min(release_chars, width - attack_chars - 3)
-        line1 = line1[:width].ljust(width)
-        lines.append(line1)
-
-        # Bottom line: baseline
-        line2 = "─" * width
-        lines.append(line2)
-
-        # Add labels
-        attack_label = f"Atk:{self.attack_ms:.0f}ms"
-        release_label = f"Rel:{self.release_ms:.0f}ms"
-        label_line = attack_label + " " * (width - len(attack_label) - len(release_label)) + release_label
-
-        return "\n".join(lines) + "\n" + label_line
-
-
-class SliderControl(Horizontal):
-    """Horizontal slider-like control with - and + buttons."""
-
-    DEFAULT_CSS = """
-    SliderControl {
+    FormField {
         height: 3;
-        width: 100%;
+        width: auto;
+        padding: 0;
     }
-    SliderControl > Label {
-        width: 18;
-        padding: 1 0;
+    FormField > .label {
+        width: 14;
+        padding: 1 1 1 0;
     }
-    SliderControl > .slider-bar {
-        width: 1fr;
-        height: 1;
-        margin: 1 1;
-        background: $surface;
+    FormField > Input {
+        width: 12;
     }
-    SliderControl > .slider-fill {
-        height: 1;
-        background: $accent;
-    }
-    SliderControl > Button {
-        width: 3;
-        min-width: 3;
-    }
-    SliderControl > .value-label {
-        width: 8;
-        text-align: right;
-        padding: 1 1;
+    FormField > .unit {
+        width: auto;
+        padding: 1 0 1 1;
+        color: $text-muted;
     }
     """
 
     class Changed(Message):
-        """Posted when slider value changes."""
-        def __init__(self, slider: "SliderControl", value: float) -> None:
-            self.slider = slider
+        """Posted when field value changes."""
+        def __init__(self, field: "FormField", value: float) -> None:
+            self.field = field
             self.value = value
             super().__init__()
 
@@ -257,7 +213,6 @@ class SliderControl(Horizontal):
         value: float,
         min_val: float,
         max_val: float,
-        step: float,
         unit: str = "",
         param_key: str = "",
         **kwargs
@@ -267,44 +222,41 @@ class SliderControl(Horizontal):
         self._value = value
         self._min = min_val
         self._max = max_val
-        self._step = step
         self._unit = unit
         self._param_key = param_key
 
     def compose(self) -> ComposeResult:
-        yield Label(self._label)
-        yield Button("-", id="dec", variant="default")
-        yield Static(self._render_bar(), classes="slider-bar")
-        yield Button("+", id="inc", variant="default")
-        yield Label(self._format_value(), classes="value-label")
-
-    def _render_bar(self) -> str:
-        """Render the slider bar."""
-        width = 20
-        filled = int((self._value - self._min) / (self._max - self._min) * width)
-        return "█" * filled + "░" * (width - filled)
+        yield Label(f"{self._label}:", classes="label")
+        # Restrict to digits, minus, decimal point (no scientific notation)
+        yield Input(
+            value=self._format_value(),
+            id="field-input",
+            restrict=r"^-?[0-9]*\.?[0-9]*$",
+        )
+        yield Label(self._unit, classes="unit")
 
     def _format_value(self) -> str:
-        """Format the current value for display."""
+        """Format the current value for display (number only)."""
         if self._value == int(self._value):
-            return f"{int(self._value)}{self._unit}"
-        return f"{self._value:.1f}{self._unit}"
+            return str(int(self._value))
+        return f"{self._value:.1f}"
 
     def _update_display(self) -> None:
-        """Update the visual display."""
-        bar = self.query_one(".slider-bar", Static)
-        bar.update(self._render_bar())
-        value_label = self.query_one(".value-label", Label)
-        value_label.update(self._format_value())
+        """Update the input display."""
+        inp = self.query_one("#field-input", Input)
+        inp.value = self._format_value()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button presses."""
-        if event.button.id == "dec":
-            self._value = max(self._min, self._value - self._step)
-        elif event.button.id == "inc":
-            self._value = min(self._max, self._value + self._step)
-        self._update_display()
-        self.post_message(self.Changed(self, self._value))
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle value input."""
+        event.stop()
+        try:
+            new_val = float(event.value.strip())
+            new_val = max(self._min, min(self._max, new_val))
+            self._value = new_val
+            self._update_display()
+            self.post_message(self.Changed(self, self._value))
+        except ValueError:
+            self._update_display()
 
     @property
     def value(self) -> float:
@@ -322,29 +274,35 @@ class SliderControl(Horizontal):
 
 
 class CompressorWidget(Container):
-    """Compressor controls with envelope visualization."""
+    """Compressor settings form."""
 
     DEFAULT_CSS = """
     CompressorWidget {
         height: auto;
-        padding: 1;
+        padding: 1 2;
         border: solid $primary;
-        margin: 1 0;
+        margin: 1 1 1 0;
+        width: 38;
     }
     CompressorWidget > .header-row {
         height: 3;
-        margin-bottom: 1;
+        width: 100%;
     }
     CompressorWidget > .header-row > Label {
-        width: 1fr;
+        width: auto;
         text-style: bold;
-        padding: 1 0;
+        padding: 1 1;
     }
     CompressorWidget > .header-row > Switch {
         width: auto;
     }
     CompressorWidget > .header-row > Select {
-        width: 20;
+        width: 16;
+    }
+    CompressorWidget > .form-fields {
+        height: auto;
+        width: 100%;
+        padding: 1 0;
     }
     """
 
@@ -357,88 +315,50 @@ class CompressorWidget(Container):
 
         # Header with enable toggle and preset selector
         with Horizontal(classes="header-row"):
+            yield Switch(value=config.get("enabled", True), id="compressor-enabled")
             yield Label("Compressor")
             yield Select(
                 [("Custom", "custom")] + [(name, name) for name in COMPRESSOR_PRESETS],
                 value="custom",
                 id="preset-select",
             )
-            yield Switch(value=config.get("enabled", True), id="compressor-enabled")
 
-        # Envelope visualization
-        yield EnvelopeCanvas(id="envelope-canvas")
+        # Form fields
+        with Vertical(classes="form-fields"):
+            yield FormField(
+                "Threshold", config.get("threshold_db", -18),
+                min_val=-40, max_val=0, unit="dB",
+                param_key="threshold_db", id="threshold-field",
+            )
+            yield FormField(
+                "Ratio", config.get("ratio", 3.0),
+                min_val=1.0, max_val=20.0, unit=":1",
+                param_key="ratio", id="ratio-field",
+            )
+            yield FormField(
+                "Attack", config.get("attack_ms", 3),
+                min_val=1, max_val=50, unit="ms",
+                param_key="attack_ms", id="attack-field",
+            )
+            yield FormField(
+                "Release", config.get("release_ms", 50),
+                min_val=10, max_val=500, unit="ms",
+                param_key="release_ms", id="release-field",
+            )
+            yield FormField(
+                "Makeup Gain", config.get("gain_db", 8),
+                min_val=0, max_val=24, unit="dB",
+                param_key="gain_db", id="gain-field",
+            )
 
-        # Attack/Release sliders
-        yield SliderControl(
-            "Attack",
-            config.get("attack_ms", 3),
-            min_val=1,
-            max_val=50,
-            step=1,
-            unit="ms",
-            param_key="attack_ms",
-            id="attack-slider",
-        )
-        yield SliderControl(
-            "Release",
-            config.get("release_ms", 50),
-            min_val=10,
-            max_val=500,
-            step=10,
-            unit="ms",
-            param_key="release_ms",
-            id="release-slider",
-        )
-
-        # Threshold/Ratio/Gain sliders
-        yield SliderControl(
-            "Threshold",
-            config.get("threshold_db", -18),
-            min_val=-40,
-            max_val=0,
-            step=1,
-            unit="dB",
-            param_key="threshold_db",
-            id="threshold-slider",
-        )
-        yield SliderControl(
-            "Ratio",
-            config.get("ratio", 3.0),
-            min_val=1.0,
-            max_val=20.0,
-            step=0.5,
-            unit=":1",
-            param_key="ratio",
-            id="ratio-slider",
-        )
-        yield SliderControl(
-            "Makeup Gain",
-            config.get("gain_db", 8),
-            min_val=0,
-            max_val=24,
-            step=1,
-            unit="dB",
-            param_key="gain_db",
-            id="gain-slider",
-        )
-
-    def on_slider_control_changed(self, event: SliderControl.Changed) -> None:
-        """Handle slider value changes."""
-        param_key = event.slider.param_key
+    def on_form_field_changed(self, event: FormField.Changed) -> None:
+        """Handle field value changes."""
+        param_key = event.field.param_key
         if param_key:
             try:
                 set_compressor_setting(param_key, event.value)
-                self.notify(f"{param_key}: {event.value}")
             except ValueError as e:
                 self.notify(str(e), severity="error")
-
-        # Update envelope visualization for attack/release changes
-        if param_key in ("attack_ms", "release_ms"):
-            canvas = self.query_one("#envelope-canvas", EnvelopeCanvas)
-            if param_key == "attack_ms":
-                canvas.attack_ms = event.value
-            else:
-                canvas.release_ms = event.value
 
     def on_switch_changed(self, event: Switch.Changed) -> None:
         """Handle compressor enable toggle."""
@@ -466,17 +386,115 @@ class CompressorWidget(Container):
             except ValueError:
                 pass
 
-        # Update UI sliders
-        self.query_one("#attack-slider", SliderControl).value = preset["attack_ms"]
-        self.query_one("#release-slider", SliderControl).value = preset["release_ms"]
-        self.query_one("#threshold-slider", SliderControl).value = preset["threshold_db"]
-        self.query_one("#ratio-slider", SliderControl).value = preset["ratio"]
-        self.query_one("#gain-slider", SliderControl).value = preset["gain_db"]
+        # Update form fields
+        self.query_one("#threshold-field", FormField).value = preset["threshold_db"]
+        self.query_one("#ratio-field", FormField).value = preset["ratio"]
+        self.query_one("#attack-field", FormField).value = preset["attack_ms"]
+        self.query_one("#release-field", FormField).value = preset["release_ms"]
+        self.query_one("#gain-field", FormField).value = preset["gain_db"]
 
-        # Update envelope
-        canvas = self.query_one("#envelope-canvas", EnvelopeCanvas)
-        canvas.attack_ms = preset["attack_ms"]
-        canvas.release_ms = preset["release_ms"]
+
+class LimiterWidget(Container):
+    """Limiter settings form."""
+
+    DEFAULT_CSS = """
+    LimiterWidget {
+        height: auto;
+        padding: 1 2;
+        border: solid $primary;
+        margin: 1 0 1 1;
+        width: 38;
+    }
+    LimiterWidget > .header-row {
+        height: 3;
+        width: 100%;
+    }
+    LimiterWidget > .header-row > Label {
+        width: auto;
+        text-style: bold;
+        padding: 1 1;
+    }
+    LimiterWidget > .header-row > Switch {
+        width: auto;
+    }
+    LimiterWidget > .header-row > Select {
+        width: 16;
+    }
+    LimiterWidget > .form-fields {
+        height: auto;
+        width: 100%;
+        padding: 1 0;
+    }
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._config = get_limiter_config()
+
+    def compose(self) -> ComposeResult:
+        config = self._config
+
+        # Header with enable toggle and preset selector
+        with Horizontal(classes="header-row"):
+            yield Switch(value=config.get("enabled", True), id="limiter-enabled")
+            yield Label("Limiter")
+            yield Select(
+                [("Custom", "custom")] + [(name, name) for name in LIMITER_PRESETS],
+                value="custom",
+                id="limiter-preset-select",
+            )
+
+        # Form fields
+        with Vertical(classes="form-fields"):
+            yield FormField(
+                "Threshold", config.get("threshold_db", -0.5),
+                min_val=-20, max_val=0, unit="dB",
+                param_key="threshold_db", id="limiter-threshold-field",
+            )
+            yield FormField(
+                "Release", config.get("release_ms", 40),
+                min_val=10, max_val=200, unit="ms",
+                param_key="release_ms", id="limiter-release-field",
+            )
+
+    def on_form_field_changed(self, event: FormField.Changed) -> None:
+        """Handle field value changes."""
+        param_key = event.field.param_key
+        if param_key:
+            try:
+                set_limiter_setting(param_key, event.value)
+            except ValueError as e:
+                self.notify(str(e), severity="error")
+
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        """Handle limiter enable toggle."""
+        if event.switch.id == "limiter-enabled":
+            try:
+                set_limiter_setting("enabled", event.value)
+                state = "enabled" if event.value else "disabled"
+                self.notify(f"Limiter {state}")
+            except ValueError as e:
+                self.notify(str(e), severity="error")
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle preset selection."""
+        if event.select.id == "limiter-preset-select" and event.value != "custom":
+            preset = LIMITER_PRESETS.get(event.value)
+            if preset:
+                self._apply_preset(preset)
+                self.notify(f"Preset: {event.value}")
+
+    def _apply_preset(self, preset: dict) -> None:
+        """Apply a limiter preset."""
+        for key, value in preset.items():
+            try:
+                set_limiter_setting(key, value)
+            except ValueError:
+                pass
+
+        # Update form fields
+        self.query_one("#limiter-threshold-field", FormField).value = preset["threshold_db"]
+        self.query_one("#limiter-release-field", FormField).value = preset["release_ms"]
 
 
 class VoiceLabScreen(Screen):
@@ -648,6 +666,15 @@ class MainScreen(Screen):
     .tab-content {
         padding: 1 2;
     }
+    .audio-container {
+        width: 100%;
+        height: auto;
+        align: center middle;
+    }
+    .audio-widgets {
+        height: auto;
+        width: auto;
+    }
     """
 
     BINDINGS = [
@@ -661,12 +688,10 @@ class MainScreen(Screen):
         with TabbedContent(id="main-tabs"):
             with TabPane("Voice Lab", id="voice-lab"):
                 yield VoiceSelector()
-                yield CompressorWidget(id="compressor-widget")
-                yield Label("Limiter", classes="section-title")
-                yield Static(
-                    "Per-voice limiter settings coming soon...\n"
-                    "See mlx-tts-tzk.4 for implementation."
-                )
+                with Container(classes="audio-container"):
+                    with Horizontal(classes="audio-widgets"):
+                        yield CompressorWidget(id="compressor-widget")
+                        yield LimiterWidget(id="limiter-widget")
             with TabPane("System", id="system"):
                 yield Label("Server Status", classes="section-title")
                 yield ServerStatusWidget(id="server-status")
