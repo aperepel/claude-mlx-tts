@@ -45,23 +45,23 @@ class TestAutocompleteAvailability:
 class TestCloneLabWidgetAutocomplete:
     """Tests for CloneLabWidget path autocomplete integration."""
 
-    def test_clone_lab_widget_has_tilde_path_autocomplete(self):
-        """CloneLabWidget should use TildePathAutoComplete for wav-path-input."""
+    def test_clone_lab_widget_has_wav_path_autocomplete(self):
+        """CloneLabWidget should use WavPathAutoComplete for wav-path-input."""
         from tts_tui import CloneLabWidget
 
-        # Check compose method source contains TildePathAutoComplete
+        # Check compose method source contains WavPathAutoComplete
         import inspect
         source = inspect.getsource(CloneLabWidget.compose)
-        assert "TildePathAutoComplete" in source, "CloneLabWidget.compose should use TildePathAutoComplete"
+        assert "WavPathAutoComplete" in source, "CloneLabWidget.compose should use WavPathAutoComplete"
 
     def test_path_autocomplete_targets_wav_input(self):
-        """TildePathAutoComplete should target the wav-path-input."""
+        """WavPathAutoComplete should target the wav-path-input."""
         from tts_tui import CloneLabWidget
         import inspect
 
         source = inspect.getsource(CloneLabWidget.compose)
-        # TildePathAutoComplete should reference the wav-path-input
-        assert "TildePathAutoComplete" in source
+        # WavPathAutoComplete should reference the wav-path-input
+        assert "WavPathAutoComplete" in source
         assert "wav-path-input" in source
 
 
@@ -109,36 +109,41 @@ class TestAutocompleteFiltering:
 # =============================================================================
 
 
-class TestTildePathAutoComplete:
-    """Tests for TildePathAutoComplete tilde expansion."""
+class TestWavPathAutoComplete:
+    """Tests for WavPathAutoComplete - tilde expansion and WAV filtering."""
 
-    def test_tilde_path_autocomplete_exists(self):
-        """TildePathAutoComplete class should exist."""
-        from tts_tui import TildePathAutoComplete
-        assert TildePathAutoComplete is not None
+    def test_wav_path_autocomplete_exists(self):
+        """WavPathAutoComplete class should exist."""
+        from tts_tui import WavPathAutoComplete
+        assert WavPathAutoComplete is not None
 
-    def test_tilde_path_autocomplete_inherits_from_path_autocomplete(self):
-        """TildePathAutoComplete should inherit from PathAutoComplete."""
-        from tts_tui import TildePathAutoComplete
+    def test_wav_path_autocomplete_inherits_from_path_autocomplete(self):
+        """WavPathAutoComplete should inherit from PathAutoComplete."""
+        from tts_tui import WavPathAutoComplete
         from textual_autocomplete import PathAutoComplete
 
-        assert issubclass(TildePathAutoComplete, PathAutoComplete)
+        assert issubclass(WavPathAutoComplete, PathAutoComplete)
+
+    def test_allowed_extensions_defined(self):
+        """WavPathAutoComplete should define ALLOWED_EXTENSIONS with .wav."""
+        from tts_tui import WavPathAutoComplete
+
+        assert hasattr(WavPathAutoComplete, "ALLOWED_EXTENSIONS")
+        assert ".wav" in WavPathAutoComplete.ALLOWED_EXTENSIONS
 
     def test_tilde_expansion_method_exists(self):
-        """TildePathAutoComplete should have _expand_tilde method."""
-        from tts_tui import TildePathAutoComplete
+        """WavPathAutoComplete should have _expand_tilde method."""
+        from tts_tui import WavPathAutoComplete
 
-        assert hasattr(TildePathAutoComplete, "_expand_tilde")
+        assert hasattr(WavPathAutoComplete, "_expand_tilde")
 
     def test_tilde_expands_to_home_directory(self):
         """_expand_tilde should expand ~ to home directory."""
-        from tts_tui import TildePathAutoComplete
-        from textual.widgets import Input
-        from pathlib import Path
+        from tts_tui import WavPathAutoComplete
         import os
 
         # Create instance (target doesn't matter for this test)
-        autocomplete = TildePathAutoComplete.__new__(TildePathAutoComplete)
+        autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
 
         # Test tilde expansion
         result = autocomplete._expand_tilde("~/Documents")
@@ -147,10 +152,10 @@ class TestTildePathAutoComplete:
 
     def test_tilde_alone_expands_to_home(self):
         """_expand_tilde should expand lone ~ to home directory."""
-        from tts_tui import TildePathAutoComplete
+        from tts_tui import WavPathAutoComplete
         import os
 
-        autocomplete = TildePathAutoComplete.__new__(TildePathAutoComplete)
+        autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
 
         result = autocomplete._expand_tilde("~")
         expected = os.path.expanduser("~")
@@ -158,21 +163,40 @@ class TestTildePathAutoComplete:
 
     def test_non_tilde_path_unchanged(self):
         """_expand_tilde should not modify paths without tilde."""
-        from tts_tui import TildePathAutoComplete
+        from tts_tui import WavPathAutoComplete
 
-        autocomplete = TildePathAutoComplete.__new__(TildePathAutoComplete)
+        autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
 
         result = autocomplete._expand_tilde("/usr/local/bin")
         assert result == "/usr/local/bin"
 
     def test_tilde_in_middle_unchanged(self):
         """_expand_tilde should only expand tilde at start of path."""
-        from tts_tui import TildePathAutoComplete
+        from tts_tui import WavPathAutoComplete
 
-        autocomplete = TildePathAutoComplete.__new__(TildePathAutoComplete)
+        autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
 
         result = autocomplete._expand_tilde("/some/path/with~tilde")
         assert result == "/some/path/with~tilde"
+
+    def test_wav_extension_filter_case_insensitive(self):
+        """ALLOWED_EXTENSIONS check should be case-insensitive."""
+        from tts_tui import WavPathAutoComplete
+        from pathlib import Path
+
+        # The filtering uses .suffix.lower()
+        assert Path("test.wav").suffix.lower() in WavPathAutoComplete.ALLOWED_EXTENSIONS
+        assert Path("test.WAV").suffix.lower() in WavPathAutoComplete.ALLOWED_EXTENSIONS
+        assert Path("test.Wav").suffix.lower() in WavPathAutoComplete.ALLOWED_EXTENSIONS
+
+    def test_non_wav_extensions_excluded(self):
+        """Non-WAV extensions should not be in ALLOWED_EXTENSIONS."""
+        from tts_tui import WavPathAutoComplete
+        from pathlib import Path
+
+        assert Path("test.mp3").suffix.lower() not in WavPathAutoComplete.ALLOWED_EXTENSIONS
+        assert Path("test.txt").suffix.lower() not in WavPathAutoComplete.ALLOWED_EXTENSIONS
+        assert Path("test.py").suffix.lower() not in WavPathAutoComplete.ALLOWED_EXTENSIONS
 
 
 # =============================================================================

@@ -311,3 +311,30 @@ class TestMainScreenCrudHandling:
         from tts_tui import MainScreen
         screen = MainScreen()
         assert screen is not None
+
+
+# =============================================================================
+# VoiceSelector Del Button State Tests
+# =============================================================================
+
+
+class TestVoiceSelectorDeleteButtonState:
+    """Tests for VoiceSelector Del button enable/disable behavior."""
+
+    def test_voice_selector_has_update_delete_button_state_method(self):
+        """VoiceSelector should have _update_delete_button_state method."""
+        from tts_tui import VoiceSelector
+        selector = VoiceSelector()
+        assert hasattr(selector, "_update_delete_button_state")
+
+    def test_voice_selector_has_select_voice_method(self):
+        """VoiceSelector should have select_voice method."""
+        from tts_tui import VoiceSelector
+        selector = VoiceSelector()
+        assert hasattr(selector, "select_voice")
+
+    def test_voice_selector_handles_option_highlighted(self):
+        """VoiceSelector should handle OptionList.OptionHighlighted event."""
+        from tts_tui import VoiceSelector
+        selector = VoiceSelector()
+        assert hasattr(selector, "on_option_list_option_highlighted")

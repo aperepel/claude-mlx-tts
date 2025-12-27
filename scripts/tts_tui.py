@@ -39,8 +39,11 @@ import os
 import re
 
 
-class TildePathAutoComplete(PathAutoComplete):
-    """PathAutoComplete with support for ~ (home directory) expansion."""
+class WavPathAutoComplete(PathAutoComplete):
+    """PathAutoComplete for WAV files with tilde expansion support."""
+
+    # File extensions to show (lowercase)
+    ALLOWED_EXTENSIONS = {".wav"}
 
     def _expand_tilde(self, path_str: str) -> str:
         """Expand ~ to home directory path."""
@@ -52,23 +55,19 @@ class TildePathAutoComplete(PathAutoComplete):
         """Get candidates with tilde expansion support."""
         current_input = target_state.text[: target_state.cursor_position]
 
-        # Expand ~ before processing
-        expanded_input = self._expand_tilde(current_input)
-
-        if "/" in expanded_input:
-            last_slash_index = expanded_input.rindex("/")
-            path_segment = expanded_input[:last_slash_index] or "/"
-            # Use expanded path directly (not relative to self.path)
-            if current_input.startswith("~") or current_input.startswith("/"):
-                directory = Path(path_segment) if path_segment != "/" else Path("/")
-            else:
-                directory = self.path / path_segment if path_segment != "/" else self.path
+        # Determine directory based on ORIGINAL input structure (not expanded)
+        # This avoids confusion from slashes inside expanded home path
+        if "/" in current_input:
+            last_slash_index = current_input.rindex("/")
+            dir_path = current_input[:last_slash_index] if last_slash_index > 0 else "/"
+            # Expand tilde only for actual filesystem access
+            directory = Path(os.path.expanduser(dir_path))
+        elif current_input == "~" or current_input.startswith("~"):
+            # Just ~ or ~partial - show home directory
+            directory = Path.home()
         else:
-            # Just ~ without slash - show home directory contents
-            if current_input == "~":
-                directory = Path.home()
-            else:
-                directory = self.path
+            # Relative path without slashes
+            directory = self.path
 
         # Use the directory path as the cache key
         cache_key = str(directory)
@@ -90,7 +89,10 @@ class TildePathAutoComplete(PathAutoComplete):
                 continue
             if entry.is_dir():
                 completion += "/"
-            results.append((completion, Path(entry.path)))
+                results.append((completion, Path(entry.path)))
+            elif Path(entry.name).suffix.lower() in self.ALLOWED_EXTENSIONS:
+                # Only include files with allowed extensions
+                results.append((completion, Path(entry.path)))
 
         results.sort(key=lambda x: (not x[1].is_dir(), x[0].lower()))
 
@@ -115,6 +117,36 @@ class TildePathAutoComplete(PathAutoComplete):
             return current_input[last_slash_index + 1 :]
         else:
             return current_input
+
+    def apply_completion(self, value: str, state: TargetState) -> None:
+        """Apply completion with proper path construction for tilde paths."""
+        current_input = state.text
+
+        # Find last slash in entire input to determine path prefix
+        if "/" in current_input:
+            last_slash_index = current_input.rindex("/")
+            path_prefix = current_input[: last_slash_index + 1]
+            new_value = path_prefix + value
+        elif current_input.startswith("~"):
+            # Input is "~" with no slash - prepend "~/" to preserve home dir
+            new_value = "~/" + value
+        else:
+            # No slashes, no tilde - just use value
+            new_value = value
+
+        self.target.value = new_value
+        self.target.cursor_position = len(new_value)
+
+    def post_completion(self) -> None:
+        """After completion, manually trigger Input.Changed for validation.
+
+        The base _complete() method wraps apply_completion in prevent(Input.Changed),
+        so the event never fires. We post it manually here, outside the prevent block.
+        """
+        super().post_completion()
+        # Manually post Input.Changed to trigger validation in CloneLabWidget
+        self.target.post_message(Input.Changed(self.target, self.target.value))
+
 
 import tts_config
 from tts_config import (
@@ -548,6 +580,17 @@ class VoiceSelector(Container):
             option_list = self.query_one("#voice-list", OptionList)
             idx = voices.index(active)
             option_list.highlighted = idx
+        self._update_delete_button_state()
+
+    def _update_delete_button_state(self) -> None:
+        """Enable/disable Del button based on selected voice (cannot delete 'default')."""
+        voice_name = self._get_selected_voice()
+        delete_btn = self.query_one("#delete-btn", Button)
+        delete_btn.disabled = voice_name == "default"
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        """Update Del button state when highlighted voice changes."""
+        self._update_delete_button_state()
 
     def _get_selected_voice(self) -> str | None:
         """Get the currently highlighted voice name."""
@@ -594,6 +637,22 @@ class VoiceSelector(Container):
         if active in voices:
             idx = voices.index(active)
             option_list.highlighted = idx
+
+        self._update_delete_button_state()
+
+    def select_voice(self, voice_name: str) -> None:
+        """Select a voice, update config, and fire VoiceChanged event."""
+        voices = discover_voices()
+        if voice_name not in voices:
+            return
+
+        option_list = self.query_one("#voice-list", OptionList)
+        idx = voices.index(voice_name)
+        option_list.highlighted = idx
+
+        set_active_voice(voice_name)
+        self.post_message(self.VoiceChanged(voice_name))
+        self._update_delete_button_state()
 
 
 class FormField(Horizontal):
@@ -1233,6 +1292,7 @@ class CloneLabWidget(Container):
         height: 3;
         width: 100%;
         margin: 1 0;
+        align: center middle;
     }
     CloneLabWidget > .clone-form > .button-row > Button {
         width: auto;
@@ -1332,7 +1392,7 @@ class CloneLabWidget(Container):
                     id="wav-path-input",
                 )
                 yield wav_input
-                yield TildePathAutoComplete(wav_input, id="wav-path-autocomplete")
+                yield WavPathAutoComplete(wav_input, id="wav-path-autocomplete")
                 yield Label("", id="wav-validation", classes="validation-msg")
 
             with Horizontal(classes="form-row"):
@@ -1380,7 +1440,8 @@ class CloneLabWidget(Container):
         if not path.strip():
             return False, ""
 
-        wav_path = Path(path.strip())
+        # Expand ~ to home directory before validation
+        wav_path = Path(os.path.expanduser(path.strip()))
         if not wav_path.exists():
             return False, "[red]File not found[/]"
         if wav_path.suffix.lower() != ".wav":
@@ -1422,6 +1483,9 @@ class CloneLabWidget(Container):
             self._wav_valid = valid
             self.query_one("#wav-validation", Label).update(msg)
             self._update_clone_button()
+            # Hide autocomplete when valid file is selected
+            if valid:
+                self.query_one("#wav-path-autocomplete", WavPathAutoComplete).action_hide()
         elif event.input.id == "voice-name-input":
             valid, msg = self._validate_voice_name(event.value)
             self._name_valid = valid
@@ -1444,12 +1508,12 @@ class CloneLabWidget(Container):
         if self.is_cloning:
             return
 
-        wav_path = self.query_one("#wav-path-input", Input).value.strip()
+        wav_path = os.path.expanduser(self.query_one("#wav-path-input", Input).value.strip())
         voice_name = self.query_one("#voice-name-input", Input).value.strip()
 
         self.is_cloning = True
+        self.query_one("#clone-btn", Button).display = False
         self.query_one("#clone-loading").display = True
-        self.query_one("#clone-btn", Button).disabled = True
         self.query_one("#status-msg").update("Cloning voice... (loading model)")
         self.query_one("#status-msg").display = True
 
@@ -1557,6 +1621,7 @@ class CloneLabWidget(Container):
 
         self.query_one("#success-section").display = False
         self.query_one("#failure-section").display = False
+        self.query_one("#clone-btn", Button).display = True
         self.query_one("#wav-path-input", Input).value = ""
         self.query_one("#voice-name-input", Input).value = ""
         self.query_one("#wav-validation", Label).update("")
@@ -1568,6 +1633,7 @@ class CloneLabWidget(Container):
     def _retry_clone(self) -> None:
         """Hide failure panel and let user retry with same inputs."""
         self.query_one("#failure-section").display = False
+        self.query_one("#clone-btn", Button).display = True
         self._update_clone_button()
 
     def _test_voice(self) -> None:
@@ -1919,9 +1985,10 @@ class MainScreen(Screen):
             delete_voice(voice_name)
             self.notify(f"Voice '{voice_name}' deleted", severity="information")
 
-            # Refresh voice selector
+            # Refresh voice selector and select 'default' voice
             voice_selector = self.query_one(VoiceSelector)
             voice_selector.refresh_voices()
+            voice_selector.select_voice("default")
 
             # Refresh compressor/limiter with new active voice
             self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
