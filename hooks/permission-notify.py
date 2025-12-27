@@ -207,12 +207,12 @@ def speak_say(message: str):
     )
 
 
-def speak_mlx(message: str):
+def speak_mlx(message: str, voice: str | None = None):
     """Speak using MLX voice cloning via HTTP server."""
     try:
         from mlx_server_utils import speak_mlx_http
         log.info("MLX TTS (HTTP)")
-        speak_mlx_http(message)
+        speak_mlx_http(message, voice=voice)
     except Exception as e:
         log.warning(f"MLX TTS failed: {e}, falling back to macOS say")
         speak_say(message)
@@ -221,11 +221,17 @@ def speak_mlx(message: str):
 def speak_notification(tool_name: str):
     """Speak the permission notification using TTS."""
     message = f"Claude needs permission to run {tool_name}."
-    log.info(f"Speaking: {message}")
 
     if is_mlx_available():
-        speak_mlx(message)
+        try:
+            from tts_config import get_effective_hook_voice
+            voice = get_effective_hook_voice("permission_request")
+        except ImportError:
+            voice = None
+        log.info(f"TTS [{voice}]: {message}")
+        speak_mlx(message, voice=voice)
     else:
+        log.info(f"TTS [Daniel]: {message}")
         speak_say(message)
 
 

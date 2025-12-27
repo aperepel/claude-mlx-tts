@@ -285,7 +285,7 @@ def speak_mlx(message: str, hook_type: str = "stop"):
         # Get effective voice for this hook (per-hook override or default)
         from tts_config import get_effective_hook_voice
         voice_name = get_effective_hook_voice(hook_type)
-        log.info(f"Using voice: {voice_name} (hook: {hook_type})")
+        log.info(f"TTS [{voice_name}] hook={hook_type}")
 
         if USE_HTTP_SERVER:
             log.info("MLX TTS (HTTP)")
