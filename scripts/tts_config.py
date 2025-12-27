@@ -587,6 +587,232 @@ def get_all_hook_voices() -> dict[str, str | None]:
 
 
 # =============================================================================
+# Voice CRUD Operations
+# =============================================================================
+
+
+def get_voice_usage(name: str) -> dict:
+    """Get usage information for a voice.
+
+    Returns dict with:
+        - is_active: bool - whether this is the active voice
+        - hooks: list[str] - hook types using this voice
+        - has_settings: bool - whether voice has custom settings
+
+    Args:
+        name: The voice name to check
+
+    Returns:
+        Dict with usage information
+    """
+    config = load_config()
+
+    is_active = config.get("active_voice", "default") == name
+
+    hooks_using = []
+    for hook_type in HOOK_TYPES:
+        hook_config = config.get("hooks", {}).get(hook_type, {})
+        if hook_config.get("voice") == name:
+            hooks_using.append(hook_type)
+
+    has_settings = name in config.get("voices", {})
+
+    return {
+        "is_active": is_active,
+        "hooks": hooks_using,
+        "has_settings": has_settings,
+    }
+
+
+def delete_voice(name: str) -> None:
+    """Delete a voice and clean up all config references.
+
+    Removes:
+        - Voice file(s) from assets (.safetensors and/or .wav)
+        - Voice settings from config.voices
+        - Hook voice overrides that reference this voice
+
+    If deleting the active voice, sets active_voice to first remaining voice.
+    Blocks deletion of the last remaining voice.
+
+    Args:
+        name: The voice name to delete
+
+    Raises:
+        ValueError: If voice name is invalid, not found, or is the last voice
+    """
+    import shutil
+
+    if not VOICE_NAME_PATTERN.match(name):
+        raise ValueError(f"Invalid voice name: {name}")
+
+    available = discover_voices()
+    if name not in available:
+        raise ValueError(f"Voice '{name}' not found")
+
+    if len(available) <= 1:
+        raise ValueError(f"Cannot delete '{name}': it is the last voice")
+
+    assets_dir = _PLUGIN_ROOT / "assets"
+
+    safetensors_file = assets_dir / f"{name}.safetensors"
+    if safetensors_file.exists():
+        safetensors_file.unlink()
+
+    wav_file = assets_dir / f"{name}.wav"
+    if wav_file.exists():
+        wav_file.unlink()
+
+    config = load_config()
+
+    if "voices" in config and name in config["voices"]:
+        del config["voices"][name]
+
+    if "hooks" in config:
+        for hook_type in list(config["hooks"].keys()):
+            if config["hooks"][hook_type].get("voice") == name:
+                del config["hooks"][hook_type]["voice"]
+                if not config["hooks"][hook_type]:
+                    del config["hooks"][hook_type]
+        if not config["hooks"]:
+            del config["hooks"]
+
+    if config.get("active_voice") == name:
+        remaining = [v for v in available if v != name]
+        config["active_voice"] = sorted(remaining)[0]
+
+    save_config(config)
+
+
+def rename_voice(old_name: str, new_name: str) -> None:
+    """Rename a voice and update all config references.
+
+    Updates:
+        - Voice file(s) in assets (.safetensors and/or .wav)
+        - Voice settings key in config.voices
+        - active_voice if renaming the active voice
+        - Hook voice overrides that reference this voice
+
+    Args:
+        old_name: The current voice name
+        new_name: The new voice name
+
+    Raises:
+        ValueError: If old name not found, new name invalid, or new name exists
+    """
+    if not VOICE_NAME_PATTERN.match(new_name):
+        raise ValueError(f"Invalid voice name: {new_name}")
+
+    available = discover_voices()
+    if old_name not in available:
+        raise ValueError(f"Voice '{old_name}' not found")
+
+    if new_name in available:
+        raise ValueError(f"Voice '{new_name}' already exists")
+
+    assets_dir = _PLUGIN_ROOT / "assets"
+
+    old_safetensors = assets_dir / f"{old_name}.safetensors"
+    if old_safetensors.exists():
+        old_safetensors.rename(assets_dir / f"{new_name}.safetensors")
+
+    old_wav = assets_dir / f"{old_name}.wav"
+    if old_wav.exists():
+        old_wav.rename(assets_dir / f"{new_name}.wav")
+
+    config = load_config()
+
+    if "voices" in config and old_name in config["voices"]:
+        config["voices"][new_name] = config["voices"].pop(old_name)
+
+    if config.get("active_voice") == old_name:
+        config["active_voice"] = new_name
+
+    if "hooks" in config:
+        for hook_type in config["hooks"]:
+            if config["hooks"][hook_type].get("voice") == old_name:
+                config["hooks"][hook_type]["voice"] = new_name
+
+    save_config(config)
+
+
+def generate_copy_name(source: str) -> str:
+    """Generate a unique copy name for a voice.
+
+    Returns source_copy, source_copy2, source_copy3, etc.
+    """
+    available = discover_voices()
+
+    # Try _copy first
+    candidate = f"{source}_copy"
+    if candidate not in available:
+        return candidate
+
+    # Try _copy2, _copy3, etc.
+    counter = 2
+    while True:
+        candidate = f"{source}_copy{counter}"
+        if candidate not in available:
+            return candidate
+        counter += 1
+
+
+def copy_voice(source: str, target: str | None = None) -> str:
+    """Copy a voice to a new name.
+
+    Copies:
+        - Voice file(s) from assets (.safetensors and/or .wav)
+        - Voice settings from config.voices (if any)
+
+    Does NOT copy:
+        - Hook voice overrides
+
+    Args:
+        source: The source voice name
+        target: The target voice name (auto-generated if None)
+
+    Returns:
+        The target voice name (useful when auto-generated)
+
+    Raises:
+        ValueError: If source not found, target invalid, or target exists
+    """
+    import shutil
+
+    available = discover_voices()
+    if source not in available:
+        raise ValueError(f"Voice '{source}' not found")
+
+    # Auto-generate target name if not provided
+    if target is None:
+        target = generate_copy_name(source)
+    else:
+        if not VOICE_NAME_PATTERN.match(target):
+            raise ValueError(f"Invalid voice name: {target}")
+        if target in available:
+            raise ValueError(f"Voice '{target}' already exists")
+
+    assets_dir = _PLUGIN_ROOT / "assets"
+
+    source_safetensors = assets_dir / f"{source}.safetensors"
+    if source_safetensors.exists():
+        shutil.copy2(source_safetensors, assets_dir / f"{target}.safetensors")
+
+    source_wav = assets_dir / f"{source}.wav"
+    if source_wav.exists():
+        shutil.copy2(source_wav, assets_dir / f"{target}.wav")
+
+    config = load_config()
+
+    if "voices" in config and source in config["voices"]:
+        import copy
+        config["voices"][target] = copy.deepcopy(config["voices"][source])
+
+    save_config(config)
+    return target
+
+
+# =============================================================================
 # Reset to Defaults
 # =============================================================================
 

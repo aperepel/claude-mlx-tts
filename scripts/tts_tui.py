@@ -14,7 +14,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
 from textual.reactive import reactive
-from textual.screen import Screen
+from textual.screen import Screen, ModalScreen
 from textual.widgets import (
     Button,
     Footer,
@@ -41,6 +41,9 @@ from tts_config import (
     DEFAULT_COMPRESSOR,
     DEFAULT_LIMITER,
     HOOK_TYPES,
+    VOICE_NAME_PATTERN,
+    copy_voice,
+    delete_voice,
     discover_voices,
     get_active_voice,
     get_compressor_config,
@@ -50,6 +53,8 @@ from tts_config import (
     get_limiter_config,
     get_streaming_interval,
     get_voice_format,
+    get_voice_usage,
+    rename_voice,
     reset_all_audio_to_defaults,
     set_active_voice,
     set_compressor_setting,
@@ -165,11 +170,259 @@ class ServerStatusWidget(Static):
         self.set_interval(5.0, self.update_status)
 
 
+# Human-readable hook type labels
+HOOK_LABELS = {
+    "stop": "Stop (completion)",
+    "permission_request": "Permission Request",
+}
+
+
+class DeleteVoiceModal(ModalScreen):
+    """Modal screen for confirming voice deletion."""
+
+    class VoiceDeleteConfirmed(Message):
+        """Posted when deletion is confirmed."""
+
+        def __init__(self, voice_name: str) -> None:
+            self.voice_name = voice_name
+            super().__init__()
+
+    class VoiceDeleteCancelled(Message):
+        """Posted when deletion is cancelled."""
+        pass
+
+    DEFAULT_CSS = """
+    DeleteVoiceModal {
+        align: center middle;
+    }
+    DeleteVoiceModal > Vertical {
+        width: 50;
+        height: auto;
+        padding: 1 2;
+        border: thick $primary;
+        background: $surface;
+    }
+    DeleteVoiceModal .modal-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    DeleteVoiceModal .warning-text {
+        color: $warning;
+        margin: 1 0;
+    }
+    DeleteVoiceModal .usage-list {
+        color: $text-muted;
+        margin-left: 2;
+    }
+    DeleteVoiceModal .button-row {
+        width: 100%;
+        height: 3;
+        margin-top: 1;
+        align: center middle;
+    }
+    DeleteVoiceModal .button-row > Button {
+        margin: 0 1;
+    }
+    """
+
+    def __init__(
+        self,
+        voice_name: str,
+        usage: dict | None = None,
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.voice_name = voice_name
+        self.usage = usage or {"is_active": False, "hooks": [], "has_settings": False}
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static(f"Delete Voice", classes="modal-title")
+            yield Static(f'Delete "{self.voice_name}"?')
+
+            # Only warn about hook usage (active voice warning is pointless)
+            if self.usage["hooks"]:
+                yield Static("This voice is used by:", classes="warning-text")
+                for hook in self.usage["hooks"]:
+                    label = HOOK_LABELS.get(hook, hook)
+                    yield Static(f"  - {label}", classes="usage-list")
+                yield Static("These will revert to the default.", classes="warning-text")
+
+            with Horizontal(classes="button-row"):
+                yield Button("Delete", id="delete-btn", variant="error")
+                yield Button("Cancel", id="cancel-btn", variant="default")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "cancel-btn":
+            self.dismiss(False)
+        elif event.button.id == "delete-btn":
+            # Post message through app so it reaches MainScreen after modal closes
+            self.app.post_message(self.VoiceDeleteConfirmed(self.voice_name))
+            self.dismiss(True)
+
+
+class InputModal(ModalScreen):
+    """Modal screen for text input (used for Copy/Rename)."""
+
+    class InputConfirmed(Message):
+        """Posted when input is confirmed."""
+
+        def __init__(self, voice_name: str, new_name: str, action_type: str) -> None:
+            self.voice_name = voice_name
+            self.new_name = new_name
+            self.action_type = action_type
+            super().__init__()
+
+    class InputCancelled(Message):
+        """Posted when input is cancelled."""
+        pass
+
+    DEFAULT_CSS = """
+    InputModal {
+        align: center middle;
+    }
+    InputModal > Vertical {
+        width: 50;
+        height: auto;
+        padding: 1 2;
+        border: thick $primary;
+        background: $surface;
+    }
+    InputModal .modal-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    InputModal .input-row {
+        width: 100%;
+        height: 3;
+        margin: 1 0;
+    }
+    InputModal .input-row > Input {
+        width: 100%;
+    }
+    InputModal .validation-msg {
+        height: 1;
+        color: $error;
+    }
+    InputModal .button-row {
+        width: 100%;
+        height: 3;
+        margin-top: 1;
+        align: center middle;
+    }
+    InputModal .button-row > Button {
+        margin: 0 1;
+    }
+    """
+
+    def __init__(
+        self,
+        title: str,
+        voice_name: str,
+        action_type: str = "copy",
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.title = title
+        self.voice_name = voice_name
+        self.action_type = action_type
+        self._is_valid = False
+
+    def compose(self) -> ComposeResult:
+        action_label = "Copy" if self.action_type == "copy" else "Rename"
+        with Vertical():
+            yield Static(self.title, classes="modal-title")
+            yield Static(f'{action_label} "{self.voice_name}" as:')
+            with Horizontal(classes="input-row"):
+                yield Input(
+                    placeholder="new_voice_name",
+                    id="name-input",
+                    restrict=r"^[a-zA-Z0-9_-]*$",
+                )
+            yield Static("", id="validation-msg", classes="validation-msg")
+            with Horizontal(classes="button-row"):
+                yield Button("Cancel", id="cancel-btn", variant="default")
+                yield Button(action_label, id="confirm-btn", variant="primary", disabled=True)
+
+    def _validate_name(self, name: str) -> tuple[bool, str]:
+        """Validate the input name."""
+        if not name.strip():
+            return False, ""
+
+        cleaned = name.strip()
+        if not VOICE_NAME_PATTERN.match(cleaned):
+            return False, "Use only letters, numbers, _, -"
+
+        existing = discover_voices()
+        if cleaned in existing:
+            return False, f"Voice '{cleaned}' already exists"
+
+        return True, ""
+
+    def validate_name(self, name: str) -> tuple[bool, str]:
+        """Public validation method."""
+        return self._validate_name(name)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Validate input as user types."""
+        if event.input.id == "name-input":
+            valid, msg = self._validate_name(event.value)
+            self._is_valid = valid
+            self.query_one("#validation-msg", Static).update(msg)
+            self.query_one("#confirm-btn", Button).disabled = not valid
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "cancel-btn":
+            self.dismiss(None)
+        elif event.button.id == "confirm-btn":
+            name_input = self.query_one("#name-input", Input)
+            new_name = name_input.value.strip()
+            if self._is_valid:
+                # Post message through app so it reaches MainScreen after modal closes
+                self.app.post_message(
+                    self.InputConfirmed(self.voice_name, new_name, self.action_type)
+                )
+                self.dismiss(new_name)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in input."""
+        if event.input.id == "name-input" and self._is_valid:
+            new_name = event.value.strip()
+            # Post message through app so it reaches MainScreen after modal closes
+            self.app.post_message(
+                self.InputConfirmed(self.voice_name, new_name, self.action_type)
+            )
+            self.dismiss(new_name)
+
+
 class VoiceSelector(Container):
-    """Voice selection widget with vertical list."""
+    """Voice selection widget with vertical list and action buttons."""
 
     class VoiceChanged(Message):
         """Posted when a voice is selected."""
+
+        def __init__(self, voice_name: str) -> None:
+            self.voice_name = voice_name
+            super().__init__()
+
+    class CopyVoiceRequested(Message):
+        """Posted when Copy button is pressed."""
+
+        def __init__(self, voice_name: str) -> None:
+            self.voice_name = voice_name
+            super().__init__()
+
+    class RenameVoiceRequested(Message):
+        """Posted when Rename button is pressed."""
+
+        def __init__(self, voice_name: str) -> None:
+            self.voice_name = voice_name
+            super().__init__()
+
+    class DeleteVoiceRequested(Message):
+        """Posted when Delete button is pressed."""
 
         def __init__(self, voice_name: str) -> None:
             self.voice_name = voice_name
@@ -185,8 +438,19 @@ class VoiceSelector(Container):
         margin: 1 1 1 0;
     }
     VoiceSelector > OptionList {
-        height: 100%;
+        height: 1fr;
         width: 100%;
+    }
+    VoiceSelector > .action-bar {
+        height: 3;
+        width: 100%;
+        dock: bottom;
+        align: center middle;
+    }
+    VoiceSelector > .action-bar > Button {
+        width: auto;
+        min-width: 6;
+        margin: 0 0;
     }
     """
 
@@ -201,6 +465,11 @@ class VoiceSelector(Container):
 
         yield option_list
 
+        with Horizontal(classes="action-bar"):
+            yield Button("Copy", id="copy-btn", variant="default")
+            yield Button("Ren", id="rename-btn", variant="default")
+            yield Button("Del", id="delete-btn", variant="warning")
+
     def on_mount(self) -> None:
         """Highlight the active voice on mount."""
         voices = discover_voices()
@@ -210,6 +479,14 @@ class VoiceSelector(Container):
             idx = voices.index(active)
             option_list.highlighted = idx
 
+    def _get_selected_voice(self) -> str | None:
+        """Get the currently highlighted voice name."""
+        option_list = self.query_one("#voice-list", OptionList)
+        if option_list.highlighted is not None:
+            option = option_list.get_option_at_index(option_list.highlighted)
+            return str(option.id)
+        return None
+
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Handle voice selection."""
         voice_name = str(event.option.id)
@@ -218,6 +495,35 @@ class VoiceSelector(Container):
             self.post_message(self.VoiceChanged(voice_name))
         except ValueError as e:
             self.notify(str(e), severity="error")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle action button presses."""
+        voice_name = self._get_selected_voice()
+        if not voice_name:
+            self.notify("No voice selected", severity="warning")
+            return
+
+        if event.button.id == "copy-btn":
+            self.post_message(self.CopyVoiceRequested(voice_name))
+        elif event.button.id == "rename-btn":
+            self.post_message(self.RenameVoiceRequested(voice_name))
+        elif event.button.id == "delete-btn":
+            self.post_message(self.DeleteVoiceRequested(voice_name))
+
+    def refresh_voices(self) -> None:
+        """Refresh the voice list after CRUD operations."""
+        option_list = self.query_one("#voice-list", OptionList)
+        option_list.clear_options()
+
+        voices = discover_voices()
+        for voice in voices:
+            display_name = get_voice_display(voice)
+            option_list.add_option(Option(display_name, id=voice))
+
+        active = get_active_voice()
+        if active in voices:
+            idx = voices.index(active)
+            option_list.highlighted = idx
 
 
 class FormField(Horizontal):
@@ -574,13 +880,6 @@ class LimiterWidget(Container):
         self.query_one("#limiter-release-field", FormField).value = preset["release_ms"]
 
 
-# Human-readable hook type labels
-HOOK_LABELS = {
-    "stop": "Stop (completion)",
-    "permission_request": "Permission Request",
-}
-
-
 class HookVoiceSelector(Container):
     """Widget for selecting voice override for a specific hook type."""
 
@@ -887,6 +1186,10 @@ class CloneLabWidget(Container):
     CloneLabWidget > .success-section > .success-header {
         text-style: bold;
         color: $success;
+        margin: 0 0 0 0;
+    }
+    CloneLabWidget > .success-section > .success-stats {
+        color: $text-muted;
         margin: 0 0 1 0;
     }
     CloneLabWidget > .success-section > .test-row {
@@ -895,7 +1198,7 @@ class CloneLabWidget(Container):
         margin: 1 0;
     }
     CloneLabWidget > .success-section > .test-row > Input {
-        width: 40;
+        width: 1fr;
     }
     CloneLabWidget > .success-section > .test-row > Button {
         width: auto;
@@ -904,7 +1207,31 @@ class CloneLabWidget(Container):
     CloneLabWidget > .success-section > .button-row {
         height: 3;
         width: 100%;
+        margin: 1 0 0 0;
+        align: center middle;
+    }
+    CloneLabWidget > .failure-section {
+        height: auto;
+        width: 100%;
+        padding: 1 2;
         margin: 1 0;
+        border: round red;
+        background: $error-darken-3;
+    }
+    CloneLabWidget > .failure-section > .failure-header {
+        text-style: bold;
+        color: $error;
+        margin: 0 0 0 0;
+    }
+    CloneLabWidget > .failure-section > .failure-message {
+        color: $text;
+        margin: 0 0 1 0;
+    }
+    CloneLabWidget > .failure-section > .button-row {
+        height: 3;
+        width: 100%;
+        margin: 1 0 0 0;
+        align: center middle;
     }
     """
 
@@ -953,6 +1280,7 @@ class CloneLabWidget(Container):
 
         with Vertical(classes="success-section", id="success-section"):
             yield Static("", id="success-header", classes="success-header")
+            yield Static("", id="success-stats", classes="success-stats")
             with Horizontal(classes="test-row"):
                 yield Input(
                     value="Hello, this is my new voice!",
@@ -962,11 +1290,18 @@ class CloneLabWidget(Container):
             with Horizontal(classes="button-row"):
                 yield Button("Clone Another", id="clone-another-btn", variant="default")
 
+        with Vertical(classes="failure-section", id="failure-section"):
+            yield Static("", id="failure-header", classes="failure-header")
+            yield Static("", id="failure-message", classes="failure-message")
+            with Horizontal(classes="button-row"):
+                yield Button("Retry", id="retry-btn", variant="warning")
+
     def on_mount(self) -> None:
         """Hide elements initially."""
         self.query_one("#clone-loading").display = False
         self.query_one("#status-msg").display = False
         self.query_one("#success-section").display = False
+        self.query_one("#failure-section").display = False
 
     def _validate_wav_path(self, path: str) -> tuple[bool, str]:
         """Validate WAV file path."""
@@ -1029,6 +1364,8 @@ class CloneLabWidget(Container):
             self._reset_form()
         elif event.button.id == "speak-btn":
             self._test_voice()
+        elif event.button.id == "retry-btn":
+            self._retry_clone()
 
     def _start_cloning(self) -> None:
         """Start the voice cloning process."""
@@ -1107,28 +1444,38 @@ class CloneLabWidget(Container):
                         size_info += line.strip() + " "
 
                 self.cloned_voice_name = voice_name
-                self.cloned_size_info = size_info.strip() or "Voice cloned successfully"
+                self.cloned_size_info = size_info.strip()
                 self.clone_success = True
 
-                # Update UI
+                # Update UI - show success, hide failure
                 self.query_one("#status-msg").display = False
+                self.query_one("#failure-section").display = False
                 self.query_one("#success-section").display = True
                 self.query_one("#success-header", Static).update(
-                    f"✓ Created: {voice_name}  {self.cloned_size_info}"
+                    f"✓ Voice Created: {voice_name}"
                 )
+                stats_text = self.cloned_size_info if self.cloned_size_info else "Voice cloned successfully"
+                self.query_one("#success-stats", Static).update(f"📊 {stats_text}")
 
                 # Post message for voice selector refresh
                 self.post_message(self.VoiceCloned(voice_name))
             else:
                 error = result.get("error", "Unknown error")
-                self.query_one("#status-msg").update(f"[red]Error: {error}[/]")
-                self._update_clone_button()
+                self._show_failure(error)
 
         elif event.state in (WorkerState.ERROR, WorkerState.CANCELLED):
             self.is_cloning = False
             self.query_one("#clone-loading").display = False
-            self.query_one("#status-msg").update("[red]Cloning failed unexpectedly[/]")
-            self._update_clone_button()
+            self._show_failure("Cloning failed unexpectedly")
+
+    def _show_failure(self, error: str) -> None:
+        """Show failure panel with error message."""
+        self.query_one("#status-msg").display = False
+        self.query_one("#success-section").display = False
+        self.query_one("#failure-section").display = True
+        self.query_one("#failure-header", Static).update("✗ Clone Failed")
+        self.query_one("#failure-message", Static).update(error)
+        self._update_clone_button()
 
     def _reset_form(self) -> None:
         """Reset form for another clone."""
@@ -1137,12 +1484,18 @@ class CloneLabWidget(Container):
         self.cloned_size_info = ""
 
         self.query_one("#success-section").display = False
+        self.query_one("#failure-section").display = False
         self.query_one("#wav-path-input", Input).value = ""
         self.query_one("#voice-name-input", Input).value = ""
         self.query_one("#wav-validation", Label).update("")
         self.query_one("#name-validation", Label).update("")
         self._wav_valid = False
         self._name_valid = False
+        self._update_clone_button()
+
+    def _retry_clone(self) -> None:
+        """Hide failure panel and let user retry with same inputs."""
+        self.query_one("#failure-section").display = False
         self._update_clone_button()
 
     def _test_voice(self) -> None:
@@ -1451,6 +1804,72 @@ class MainScreen(Screen):
 
         # Notify user
         self.notify(f"Voice '{event.voice_name}' created successfully!", severity="information")
+
+    # =========================================================================
+    # Voice CRUD handlers
+    # =========================================================================
+
+    def on_voice_selector_copy_voice_requested(self, event: VoiceSelector.CopyVoiceRequested) -> None:
+        """Handle copy voice request - copy with auto-generated name."""
+        try:
+            new_name = copy_voice(event.voice_name)
+            self.notify(f"Copied to '{new_name}'", severity="information")
+
+            # Refresh voice selector
+            voice_selector = self.query_one(VoiceSelector)
+            voice_selector.refresh_voices()
+        except ValueError as e:
+            self.notify(str(e), severity="error")
+
+    def on_voice_selector_rename_voice_requested(self, event: VoiceSelector.RenameVoiceRequested) -> None:
+        """Handle rename voice request - show InputModal."""
+        modal = InputModal(
+            title="Rename Voice",
+            voice_name=event.voice_name,
+            action_type="rename",
+        )
+        self.app.push_screen(modal)
+
+    def on_voice_selector_delete_voice_requested(self, event: VoiceSelector.DeleteVoiceRequested) -> None:
+        """Handle delete voice request - show DeleteVoiceModal."""
+        usage = get_voice_usage(event.voice_name)
+        modal = DeleteVoiceModal(
+            voice_name=event.voice_name,
+            usage=usage,
+        )
+        self.app.push_screen(modal)
+
+    def on_input_modal_input_confirmed(self, event: InputModal.InputConfirmed) -> None:
+        """Handle input modal confirmation for rename."""
+        try:
+            rename_voice(event.voice_name, event.new_name)
+            self.notify(f"Renamed to '{event.new_name}'", severity="information")
+
+            # Refresh voice selector
+            voice_selector = self.query_one(VoiceSelector)
+            voice_selector.refresh_voices()
+
+            # Refresh compressor/limiter if needed
+            self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
+            self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
+        except ValueError as e:
+            self.notify(str(e), severity="error")
+
+    def on_delete_voice_modal_voice_delete_confirmed(self, event: DeleteVoiceModal.VoiceDeleteConfirmed) -> None:
+        """Handle delete voice confirmation."""
+        try:
+            delete_voice(event.voice_name)
+            self.notify(f"Voice '{event.voice_name}' deleted", severity="information")
+
+            # Refresh voice selector
+            voice_selector = self.query_one(VoiceSelector)
+            voice_selector.refresh_voices()
+
+            # Refresh compressor/limiter with new active voice
+            self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
+            self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
+        except ValueError as e:
+            self.notify(str(e), severity="error")
 
 
 class TTSConfigApp(App):
