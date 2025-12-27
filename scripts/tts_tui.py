@@ -255,11 +255,9 @@ class DeleteVoiceModal(ModalScreen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
         if event.button.id == "cancel-btn":
-            self.dismiss(False)
+            self.dismiss(None)
         elif event.button.id == "delete-btn":
-            # Post message through app so it reaches MainScreen after modal closes
-            self.app.post_message(self.VoiceDeleteConfirmed(self.voice_name))
-            self.dismiss(True)
+            self.dismiss(self.voice_name)
 
 
 class InputModal(ModalScreen):
@@ -380,21 +378,13 @@ class InputModal(ModalScreen):
             name_input = self.query_one("#name-input", Input)
             new_name = name_input.value.strip()
             if self._is_valid:
-                # Post message through app so it reaches MainScreen after modal closes
-                self.app.post_message(
-                    self.InputConfirmed(self.voice_name, new_name, self.action_type)
-                )
-                self.dismiss(new_name)
+                self.dismiss((self.voice_name, new_name, self.action_type))
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle Enter key in input."""
         if event.input.id == "name-input" and self._is_valid:
             new_name = event.value.strip()
-            # Post message through app so it reaches MainScreen after modal closes
-            self.app.post_message(
-                self.InputConfirmed(self.voice_name, new_name, self.action_type)
-            )
-            self.dismiss(new_name)
+            self.dismiss((self.voice_name, new_name, self.action_type))
 
 
 class VoiceSelector(Container):
@@ -1828,7 +1818,7 @@ class MainScreen(Screen):
             voice_name=event.voice_name,
             action_type="rename",
         )
-        self.app.push_screen(modal)
+        self.app.push_screen(modal, callback=self._handle_input_result)
 
     def on_voice_selector_delete_voice_requested(self, event: VoiceSelector.DeleteVoiceRequested) -> None:
         """Handle delete voice request - show DeleteVoiceModal."""
@@ -1837,35 +1827,44 @@ class MainScreen(Screen):
             voice_name=event.voice_name,
             usage=usage,
         )
-        self.app.push_screen(modal)
+        self.app.push_screen(modal, callback=self._handle_delete_result)
 
-    def on_input_modal_input_confirmed(self, event: InputModal.InputConfirmed) -> None:
-        """Handle input modal confirmation for rename."""
+    def _handle_delete_result(self, voice_name: str | None) -> None:
+        """Handle delete modal result via callback."""
+        if voice_name is None:
+            return
         try:
-            rename_voice(event.voice_name, event.new_name)
-            self.notify(f"Renamed to '{event.new_name}'", severity="information")
-
-            # Refresh voice selector
-            voice_selector = self.query_one(VoiceSelector)
-            voice_selector.refresh_voices()
-
-            # Refresh compressor/limiter if needed
-            self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
-            self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
-        except ValueError as e:
-            self.notify(str(e), severity="error")
-
-    def on_delete_voice_modal_voice_delete_confirmed(self, event: DeleteVoiceModal.VoiceDeleteConfirmed) -> None:
-        """Handle delete voice confirmation."""
-        try:
-            delete_voice(event.voice_name)
-            self.notify(f"Voice '{event.voice_name}' deleted", severity="information")
+            delete_voice(voice_name)
+            self.notify(f"Voice '{voice_name}' deleted", severity="information")
 
             # Refresh voice selector
             voice_selector = self.query_one(VoiceSelector)
             voice_selector.refresh_voices()
 
             # Refresh compressor/limiter with new active voice
+            self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
+            self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
+        except ValueError as e:
+            self.notify(str(e), severity="error")
+
+    def _handle_input_result(self, result: tuple[str, str, str] | None) -> None:
+        """Handle input modal result via callback (rename/copy)."""
+        if result is None:
+            return
+        voice_name, new_name, action_type = result
+        try:
+            if action_type == "rename":
+                rename_voice(voice_name, new_name)
+                self.notify(f"Renamed to '{new_name}'", severity="information")
+            elif action_type == "copy":
+                copy_voice(voice_name, new_name)
+                self.notify(f"Copied to '{new_name}'", severity="information")
+
+            # Refresh voice selector
+            voice_selector = self.query_one(VoiceSelector)
+            voice_selector.refresh_voices()
+
+            # Refresh compressor/limiter if needed
             self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
             self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
         except ValueError as e:
