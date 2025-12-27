@@ -366,6 +366,41 @@ def set_voice_config(voice_name: str, settings: dict) -> None:
     save_config(config)
 
 
+# =============================================================================
+# Per-Voice Getters/Setters (explicit voice_name parameter)
+# =============================================================================
+
+
+def get_voice_compressor(voice_name: str) -> dict:
+    """Get compressor configuration for a specific voice.
+
+    Returns voice-specific settings merged with defaults.
+    Falls back to DEFAULT_COMPRESSOR for missing keys.
+    """
+    config = load_config()
+    voices = config.get("voices", {})
+    voice_config = voices.get(voice_name, {})
+    voice_compressor = voice_config.get("compressor", {})
+
+    # Merge with defaults for missing keys
+    return {**DEFAULT_COMPRESSOR, **voice_compressor}
+
+
+def get_voice_limiter(voice_name: str) -> dict:
+    """Get limiter configuration for a specific voice.
+
+    Returns voice-specific settings merged with defaults.
+    Falls back to DEFAULT_LIMITER for missing keys.
+    """
+    config = load_config()
+    voices = config.get("voices", {})
+    voice_config = voices.get(voice_name, {})
+    voice_limiter = voice_config.get("limiter", {})
+
+    # Merge with defaults for missing keys
+    return {**DEFAULT_LIMITER, **voice_limiter}
+
+
 def get_effective_compressor(voice_name: str = None) -> dict:
     """Get effective compressor settings for a voice.
 
@@ -374,14 +409,7 @@ def get_effective_compressor(voice_name: str = None) -> dict:
     """
     if voice_name is None:
         voice_name = get_active_voice()
-
-    config = load_config()
-    voices = config.get("voices", {})
-    voice_config = voices.get(voice_name, {})
-    voice_compressor = voice_config.get("compressor", {})
-
-    # Cascade: defaults <- voice-specific
-    return {**DEFAULT_COMPRESSOR, **voice_compressor}
+    return get_voice_compressor(voice_name)
 
 
 def get_effective_limiter(voice_name: str = None) -> dict:
@@ -392,14 +420,75 @@ def get_effective_limiter(voice_name: str = None) -> dict:
     """
     if voice_name is None:
         voice_name = get_active_voice()
+    return get_voice_limiter(voice_name)
+
+
+def set_voice_compressor(voice_name: str, key: str, value: float | bool) -> None:
+    """Set a single compressor setting for a specific voice.
+
+    Args:
+        voice_name: The voice to configure
+        key: The compressor setting key (must be valid)
+        value: The value to set
+    """
+    if key not in DEFAULT_COMPRESSOR:
+        valid_keys = ", ".join(DEFAULT_COMPRESSOR.keys())
+        raise ValueError(f"Invalid compressor key '{key}'. Valid keys: {valid_keys}")
 
     config = load_config()
-    voices = config.get("voices", {})
-    voice_config = voices.get(voice_name, {})
-    voice_limiter = voice_config.get("limiter", {})
 
-    # Cascade: defaults <- voice-specific
-    return {**DEFAULT_LIMITER, **voice_limiter}
+    if "voices" not in config:
+        config["voices"] = {}
+    if voice_name not in config["voices"]:
+        config["voices"][voice_name] = {}
+    if "compressor" not in config["voices"][voice_name]:
+        config["voices"][voice_name]["compressor"] = {}
+
+    config["voices"][voice_name]["compressor"][key] = value
+    save_config(config)
+
+
+def set_voice_limiter(voice_name: str, key: str, value: float | bool) -> None:
+    """Set a single limiter setting for a specific voice.
+
+    Args:
+        voice_name: The voice to configure
+        key: The limiter setting key (must be valid)
+        value: The value to set
+    """
+    if key not in DEFAULT_LIMITER:
+        valid_keys = ", ".join(DEFAULT_LIMITER.keys())
+        raise ValueError(f"Invalid limiter key '{key}'. Valid keys: {valid_keys}")
+
+    config = load_config()
+
+    if "voices" not in config:
+        config["voices"] = {}
+    if voice_name not in config["voices"]:
+        config["voices"][voice_name] = {}
+    if "limiter" not in config["voices"][voice_name]:
+        config["voices"][voice_name]["limiter"] = {}
+
+    config["voices"][voice_name]["limiter"][key] = value
+    save_config(config)
+
+
+def reset_voice_to_defaults(voice_name: str) -> None:
+    """Reset a specific voice's compressor and limiter settings to factory defaults.
+
+    Args:
+        voice_name: The voice to reset
+    """
+    config = load_config()
+
+    if "voices" not in config:
+        config["voices"] = {}
+    if voice_name not in config["voices"]:
+        config["voices"][voice_name] = {}
+
+    config["voices"][voice_name]["compressor"] = DEFAULT_COMPRESSOR.copy()
+    config["voices"][voice_name]["limiter"] = DEFAULT_LIMITER.copy()
+    save_config(config)
 
 
 # =============================================================================
