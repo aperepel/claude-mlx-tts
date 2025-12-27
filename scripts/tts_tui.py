@@ -31,6 +31,8 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 from textual.message import Message
+from textual.worker import Worker
+from textual import work
 
 import tts_config
 from tts_config import (
@@ -688,16 +690,22 @@ class PreviewWidget(Container):
         self.query_one("#loading-indicator").display = False
 
     def watch_is_playing(self, playing: bool) -> None:
-        """Update UI based on playing state."""
+        """Update UI based on playing state.
+
+        Note: We deliberately don't disable the button because doing so
+        causes focus to shift to the next focusable widget (an Input field).
+        If the user then presses a number key to switch tabs, the keystroke
+        is captured by the Input instead of triggering the tab binding.
+        """
         btn = self.query_one("#play-preview-btn", Button)
         loader = self.query_one("#loading-indicator")
 
         if playing:
-            btn.disabled = True
+            btn.variant = "default"
             btn.label = "Playing..."
             loader.display = True
         else:
-            btn.disabled = False
+            btn.variant = "primary"
             btn.label = "Play"
             loader.display = False
 
@@ -717,6 +725,7 @@ class PreviewWidget(Container):
         elif event.button.id == "reset-audio-btn":
             reset_all_audio_to_defaults()
             self.post_message(self.AudioReset())
+            self.app.set_focus(None)
 
     def _play_preview(self) -> None:
         """Play the preview phrase using TTS."""
@@ -724,53 +733,59 @@ class PreviewWidget(Container):
             return
 
         self.is_playing = True
+        # Blur focus to prevent button state changes from interfering with key events
+        self.app.set_focus(None)
+        self._run_tts_worker()
 
-        # Spawn a thread to manage the subprocess (so we don't block the UI)
-        import threading
-        thread = threading.Thread(target=self._do_tts_subprocess, daemon=True)
-        thread.start()
+    @work(exclusive=True, thread=True)
+    def _run_tts_worker(self) -> dict:
+        """Background worker for TTS playback.
 
-    def _do_tts_subprocess(self) -> None:
-        """Play TTS in a separate process.
-
-        Why subprocess instead of threading?
-        ------------------------------------
-        Textual's event loop and Python's GIL cause audio buffer underruns
-        when TTS runs in-process. The event loop's frequent repaints compete
-        for CPU time with audio playback, causing crackles/pops. Running TTS
-        in a subprocess completely isolates it from the TUI process.
+        Uses Textual's worker system instead of manual threading for better
+        integration with the event loop. Returns result dict for on_worker_state_changed.
         """
         import subprocess
         import sys
         import os
 
-        def finish(status: str, error: str | None = None) -> None:
-            self.status_message = status
-            self.is_playing = False
-            if error:
-                self.notify(error, severity="error")
+        scripts_dir = os.path.dirname(os.path.abspath(__file__))
+        tts_script = os.path.join(scripts_dir, "mlx_server_utils.py")
 
         try:
-            scripts_dir = os.path.dirname(os.path.abspath(__file__))
-            tts_script = os.path.join(scripts_dir, "mlx_server_utils.py")
-
             result = subprocess.run(
                 [sys.executable, tts_script, self._preview_phrase],
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
-
-            if result.returncode == 0:
-                self.app.call_from_thread(finish, "")
-            else:
-                error_msg = result.stderr[:100] if result.stderr else "Unknown error"
-                self.app.call_from_thread(finish, "Error", f"TTS failed: {error_msg}")
-
+            return {"success": result.returncode == 0, "stderr": result.stderr}
         except subprocess.TimeoutExpired:
-            self.app.call_from_thread(finish, "Timeout", "TTS timed out after 60s")
+            return {"success": False, "error": "TTS timed out after 60s"}
         except Exception as e:
-            self.app.call_from_thread(finish, f"Error: {str(e)[:40]}", f"TTS Error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle TTS worker completion."""
+        from textual.worker import WorkerState
+
+        if event.worker.name != "_run_tts_worker":
+            return
+
+        if event.state == WorkerState.SUCCESS:
+            result = event.worker.result
+            self.is_playing = False
+            if result.get("success"):
+                self.status_message = ""
+            else:
+                error = result.get("error") or result.get("stderr", "")[:100]
+                self.status_message = "Error"
+                self.notify(f"TTS failed: {error}", severity="error")
+        elif event.state in (WorkerState.ERROR, WorkerState.CANCELLED):
+            self.is_playing = False
+            self.status_message = "Error"
+
+        # Ensure focus is cleared so key bindings work
+        self.app.set_focus(None)
 
     @property
     def preview_phrase(self) -> str:
@@ -948,10 +963,10 @@ class MainScreen(Screen):
     """
 
     BINDINGS = [
-        Binding("1", "switch_tab('voice-lab')", "Voice Lab", show=True),
-        Binding("2", "switch_tab('hooks')", "Hooks", show=True),
-        Binding("3", "switch_tab('system')", "System", show=True),
-        Binding("4", "switch_tab('about')", "About", show=True),
+        Binding("1", "switch_tab('voice-lab')", "Voice Lab", show=True, priority=True),
+        Binding("2", "switch_tab('hooks')", "Hooks", show=True, priority=True),
+        Binding("3", "switch_tab('system')", "System", show=True, priority=True),
+        Binding("4", "switch_tab('about')", "About", show=True, priority=True),
     ]
 
     def compose(self) -> ComposeResult:
