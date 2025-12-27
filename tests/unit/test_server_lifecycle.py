@@ -242,13 +242,14 @@ class TestSpeakMlxHttp:
                 mock_response.content = b""  # Empty audio data to skip playback
                 mock_post.return_value = mock_response
 
-                speak_mlx_http("Test message", speed=1.5)
+                speak_mlx_http("Test message")
 
                 mock_post.assert_called_once()
                 call_kwargs = mock_post.call_args[1]
                 payload = call_kwargs["json"]
                 assert payload["input"] == "Test message"
-                assert payload["speed"] == 1.5
+                # Note: speed not included - Chatterbox doesn't support it
+                assert "speed" not in payload
 
     def test_uses_correct_endpoint(self):
         """speak_mlx_http should POST to /v1/audio/speech endpoint."""

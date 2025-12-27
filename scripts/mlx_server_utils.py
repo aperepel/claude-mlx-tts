@@ -60,15 +60,6 @@ MLX_VOICE_REF = os.environ.get(
 )
 
 
-def _get_configured_speed() -> float:
-    """Get playback speed from config, with fallback to default."""
-    try:
-        from tts_config import get_playback_speed, DEFAULT_SPEED
-        return get_playback_speed()
-    except ImportError:
-        return 1.3
-
-
 # =============================================================================
 # Exceptions
 # =============================================================================
@@ -203,7 +194,6 @@ def ensure_server_running(
 
 def speak_mlx_http(
     text: str,
-    speed: float | None = None,
     voice: str | None = None,
     timeout: int = 60
 ) -> None:
@@ -212,9 +202,11 @@ def speak_mlx_http(
 
     Auto-starts server if not running.
 
+    Note: Speed parameter is not supported by Chatterbox model.
+    The mlx_audio library explicitly ignores speed for Chatterbox.
+
     Args:
         text: Text to convert to speech.
-        speed: Speech speed multiplier.
         voice: Voice/model to use.
         timeout: Request timeout in seconds.
 
@@ -228,16 +220,12 @@ def speak_mlx_http(
 
     ensure_server_running()
 
-    # Use configured speed if not explicitly provided
-    actual_speed = speed if speed is not None else _get_configured_speed()
-
     url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
     payload = {
         "input": text,
-        "speed": actual_speed,
         "model": voice or MLX_MODEL,
-        # Don't send ref_audio - server uses pre-warmed voice conditionals
+        # Note: speed parameter not included - Chatterbox doesn't support it
     }
 
     log.debug(f"Sending TTS request: {text[:50]}...")

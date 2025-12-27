@@ -7,7 +7,7 @@ Config is stored at ${PLUGIN_ROOT}/.config/config.json
 Structure:
     {
         "profiles": {
-            "default": {"speed": 1.3, "streaming_interval": 0.5}
+            "default": {"streaming_interval": 0.5}
         },
         "active_profile": "default",
         "active_voice": "default_voice",
@@ -36,17 +36,6 @@ from pathlib import Path
 # Plugin-local config directory (follows .cache/ pattern)
 _PLUGIN_ROOT = Path(__file__).parent.parent
 _CONFIG_DIR = _PLUGIN_ROOT / ".config"
-
-# Speed presets: speed multiplier -> human label
-SPEED_PRESETS = {
-    1.0: "Slow",
-    1.3: "Normal",
-    1.6: "Fast",
-    2.0: "Turbo",
-}
-
-# Default speed when no config exists
-DEFAULT_SPEED = 1.3
 
 # Streaming configuration
 DEFAULT_STREAMING_INTERVAL = 0.5  # Target: 0.5s for ~260ms TTFT
@@ -79,7 +68,6 @@ VOICE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
 DEFAULT_CONFIG = {
     "profiles": {
         "default": {
-            "speed": DEFAULT_SPEED,
             "streaming_interval": DEFAULT_STREAMING_INTERVAL,
         }
     },
@@ -139,40 +127,6 @@ def get_active_profile() -> str:
     """Get the name of the active profile."""
     config = load_config()
     return config.get("active_profile", "default")
-
-
-def get_profile_speed(profile: str = None) -> float:
-    """Get the speed for a profile (default: active profile)."""
-    config = load_config()
-    if profile is None:
-        profile = config.get("active_profile", "default")
-    profiles = config.get("profiles", {})
-    profile_config = profiles.get(profile, {})
-    return profile_config.get("speed", DEFAULT_SPEED)
-
-
-def get_playback_speed() -> float:
-    """Get the current playback speed setting (active profile)."""
-    return get_profile_speed()
-
-
-def set_playback_speed(speed: float, profile: str = None) -> None:
-    """Set the playback speed for a profile, must be a valid preset value."""
-    if speed not in SPEED_PRESETS:
-        valid = ", ".join(f"{s}" for s in SPEED_PRESETS.keys())
-        raise ValueError(f"Invalid speed {speed}. Valid speeds: {valid}")
-
-    config = load_config()
-    if profile is None:
-        profile = config.get("active_profile", "default")
-
-    if "profiles" not in config:
-        config["profiles"] = {}
-    if profile not in config["profiles"]:
-        config["profiles"][profile] = {}
-
-    config["profiles"][profile]["speed"] = speed
-    save_config(config)
 
 
 def get_streaming_interval(profile: str = None) -> float:
@@ -512,9 +466,8 @@ def format_current_config() -> str:
     """Format the current configuration for display."""
     config = load_config()
     profile = config.get("active_profile", "default")
-    speed = get_profile_speed(profile)
-    label = SPEED_PRESETS.get(speed, "Custom")
-    return f"Profile: {profile}\nPlayback speed: {speed}x ({label})"
+    interval = get_streaming_interval(profile)
+    return f"Profile: {profile}\nStreaming interval: {interval}s"
 
 
 def cmd_show() -> None:
@@ -528,8 +481,6 @@ def cmd_status() -> None:
     config = load_config()
     config_path = get_config_path()
     profile = config.get("active_profile", "default")
-    speed = get_profile_speed(profile)
-    speed_label = SPEED_PRESETS.get(speed, "Custom")
     interval = get_streaming_interval(profile)
     compressor = get_compressor_config()
 
@@ -539,7 +490,6 @@ def cmd_status() -> None:
     print(f"Active profile: {profile}")
     print()
     print("Playback Settings:")
-    print(f"  Speed: {speed}x ({speed_label})")
     print(f"  Streaming interval: {interval}s")
     print()
     print("Compressor:")
@@ -548,42 +498,6 @@ def cmd_status() -> None:
     print()
     print("To configure TTS settings, run:")
     print("  uv run --directory $CLAUDE_PLUGIN_ROOT python scripts/tts_configurator.py")
-
-
-def cmd_set(speed_str: str) -> None:
-    """Set playback speed."""
-    try:
-        speed = float(speed_str)
-    except ValueError:
-        print(f"Error: Invalid speed value '{speed_str}'", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        set_playback_speed(speed)
-        label = SPEED_PRESETS.get(speed, "Custom")
-        print(f"Playback speed set to {speed}x ({label})")
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
-def cmd_wizard() -> None:
-    """Output wizard info for Claude to use with AskUserQuestion."""
-    config = load_config()
-    profile = config.get("active_profile", "default")
-    current_speed = get_profile_speed(profile)
-    current_label = SPEED_PRESETS.get(current_speed, "Custom")
-
-    print("TTS Configuration Wizard")
-    print("=" * 40)
-    print(f"\nActive profile: {profile}")
-    print(f"Current speed: {current_speed}x ({current_label})")
-    print("\nAvailable playback speeds:")
-    for speed, label in sorted(SPEED_PRESETS.items()):
-        marker = " <-- current" if speed == current_speed else ""
-        print(f"  {speed}x - {label}{marker}")
-    print("\nUse AskUserQuestion to let the user select a speed,")
-    print("then run: tts-config.py set <speed>")
 
 
 def main() -> None:
@@ -598,16 +512,9 @@ def main() -> None:
         cmd_status()
     elif command == "show":
         cmd_show()
-    elif command == "set":
-        if len(sys.argv) < 3:
-            print("Error: set requires a speed value", file=sys.stderr)
-            sys.exit(1)
-        cmd_set(sys.argv[2])
-    elif command == "wizard":
-        cmd_wizard()
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
-        print("Usage: tts-config.py [status|show|set <speed>|wizard]", file=sys.stderr)
+        print("Usage: tts-config.py [status|show]", file=sys.stderr)
         sys.exit(1)
 
 

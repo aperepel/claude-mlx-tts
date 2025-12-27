@@ -115,15 +115,6 @@ class TestSpeakMlx:
             assert call_kwargs["play"] is True
             assert call_kwargs["text"] == "Test message"
 
-    def test_speak_mlx_passes_speed_parameter(self):
-        """speak_mlx should pass speed parameter to generate_speech."""
-        from mlx_tts_core import speak_mlx
-
-        with patch("mlx_tts_core.generate_speech") as mock_gen:
-            speak_mlx("Test", speed=1.2)
-            call_kwargs = mock_gen.call_args[1]
-            assert call_kwargs["speed"] == 1.2
-
 
 class TestWarmLatency:
     """Performance tests for warm (cached model) latency."""
@@ -192,7 +183,7 @@ class TestStreamingMetrics:
         mock.sample_rate = 24000
 
         # Create mock generation results
-        def mock_generate(text, ref_audio=None, speed=1.0, stream=True, **kwargs):
+        def mock_generate(text, ref_audio=None, stream=True, **kwargs):
             """Simulate streaming generation with multiple chunks."""
             chunk_count = 3
             samples_per_chunk = 12000  # 0.5s at 24kHz

@@ -37,7 +37,6 @@ from tts_config import (
     DEFAULT_COMPRESSOR,
     DEFAULT_LIMITER,
     HOOK_TYPES,
-    SPEED_PRESETS,
     discover_voices,
     get_active_voice,
     get_compressor_config,
@@ -45,14 +44,12 @@ from tts_config import (
     get_effective_limiter,
     get_hook_voice,
     get_limiter_config,
-    get_playback_speed,
     get_streaming_interval,
     reset_all_audio_to_defaults,
     set_active_voice,
     set_compressor_setting,
     set_hook_voice,
     set_limiter_setting,
-    set_playback_speed,
     set_streaming_interval,
     set_voice_config,
 )
@@ -765,7 +762,7 @@ class PreviewWidget(Container):
             )
 
             if result.returncode == 0:
-                self.app.call_from_thread(finish, "Done")
+                self.app.call_from_thread(finish, "")
             else:
                 error_msg = result.stderr[:100] if result.stderr else "Unknown error"
                 self.app.call_from_thread(finish, "Error", f"TTS failed: {error_msg}")
@@ -858,15 +855,6 @@ class SystemScreen(Screen):
             ServerStatusWidget(id="server-status"),
             Label("Playback Settings", classes="section-title"),
             Horizontal(
-                Label("Speed:", classes="setting-label"),
-                Select(
-                    [(f"{s}x ({l})", s) for s, l in SPEED_PRESETS.items()],
-                    value=get_playback_speed(),
-                    id="speed-select",
-                ),
-                classes="setting-row",
-            ),
-            Horizontal(
                 Label("Streaming Interval:", classes="setting-label"),
                 Select(
                     [
@@ -886,12 +874,7 @@ class SystemScreen(Screen):
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle setting changes."""
-        if event.select.id == "speed-select" and event.value is not None:
-            try:
-                set_playback_speed(event.value)
-            except ValueError as e:
-                self.notify(str(e), severity="error")
-        elif event.select.id == "interval-select" and event.value is not None:
+        if event.select.id == "interval-select" and event.value is not None:
             try:
                 set_streaming_interval(event.value)
             except ValueError as e:
@@ -996,15 +979,6 @@ class MainScreen(Screen):
                 yield ServerStatusWidget(id="server-status")
                 yield Label("Playback Settings", classes="section-title")
                 yield Horizontal(
-                    Label("Speed:", classes="setting-label"),
-                    Select(
-                        [(f"{s}x ({l})", s) for s, l in SPEED_PRESETS.items()],
-                        value=get_playback_speed(),
-                        id="speed-select",
-                    ),
-                    classes="setting-row",
-                )
-                yield Horizontal(
                     Label("Streaming Interval:", classes="setting-label"),
                     Select(
                         [
@@ -1036,12 +1010,7 @@ class MainScreen(Screen):
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle setting changes."""
-        if event.select.id == "speed-select" and event.value is not None:
-            try:
-                set_playback_speed(event.value)
-            except ValueError as e:
-                self.notify(str(e), severity="error")
-        elif event.select.id == "interval-select" and event.value is not None:
+        if event.select.id == "interval-select" and event.value is not None:
             try:
                 set_streaming_interval(event.value)
             except ValueError as e:

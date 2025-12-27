@@ -42,19 +42,6 @@ MLX_VOICE_REF = os.environ.get(
     os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
 )
 
-# Default speed fallback (config takes precedence)
-DEFAULT_SPEED = 1.3
-
-
-def _get_configured_speed() -> float:
-    """Get playback speed from config, with fallback to default."""
-    try:
-        from tts_config import get_playback_speed
-        return get_playback_speed()
-    except ImportError:
-        return DEFAULT_SPEED
-
-
 # Default streaming interval fallback
 DEFAULT_STREAMING_INTERVAL = 0.5
 
@@ -133,7 +120,6 @@ def generate_speech(
     model: Any | None = None,
     ref_audio: str | None = None,
     ref_text: str = ".",
-    speed: float | None = None,
     play: bool = True,
     save_path: str | None = None,
     verbose: bool = False,
@@ -144,12 +130,14 @@ def generate_speech(
     """
     Generate speech from text using MLX TTS.
 
+    Note: Speed parameter is not supported by Chatterbox model.
+    The mlx_audio library explicitly ignores speed for Chatterbox.
+
     Args:
         text: Text to convert to speech.
         model: Pre-loaded model (uses cached model if None).
         ref_audio: Path to voice reference WAV file.
         ref_text: Transcript of reference audio.
-        speed: Speech speed multiplier (default from config).
         play: Whether to play audio immediately.
         save_path: Optional path to save audio file.
         verbose: Enable verbose logging from mlx_audio.
@@ -177,7 +165,6 @@ def generate_speech(
 
     # Set defaults
     actual_ref_audio = ref_audio or MLX_VOICE_REF
-    actual_speed = speed if speed is not None else _get_configured_speed()
     actual_streaming_interval = streaming_interval if streaming_interval is not None else _get_configured_streaming_interval()
 
     # Verify voice reference exists
@@ -188,7 +175,7 @@ def generate_speech(
     if stream and save_path:
         log.warning("save_path is ignored in streaming mode - audio plays but cannot be saved")
 
-    log.debug(f"Generating speech: '{text[:50]}...' (speed={actual_speed}, play={play}, stream={stream})")
+    log.debug(f"Generating speech: '{text[:50]}...' (play={play}, stream={stream})")
 
     # Suppress tokenizers parallelism warning
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -201,7 +188,6 @@ def generate_speech(
                 model=model,
                 ref_audio=actual_ref_audio,
                 ref_text=ref_text,
-                speed=actual_speed,
                 play=play,
                 streaming_interval=actual_streaming_interval,
             )
@@ -212,7 +198,6 @@ def generate_speech(
                 model=model,
                 ref_audio=actual_ref_audio,
                 ref_text=ref_text,
-                speed=actual_speed,
                 play=play,
                 save_path=save_path,
                 verbose=verbose,
@@ -238,7 +223,6 @@ def _generate_streaming_with_metrics(
     model: Any,
     ref_audio: str,
     ref_text: str,
-    speed: float,
     play: bool,
     streaming_interval: float,
 ) -> dict[str, float]:
@@ -248,6 +232,9 @@ def _generate_streaming_with_metrics(
     Uses direct model.generate() + AudioPlayer for streaming playback
     while capturing TTFT and other metrics. Audio is processed through
     compressor/limiter for consistent volume levels.
+
+    Note: Speed parameter is not passed to model.generate() as
+    Chatterbox does not support speed adjustment.
     """
     from mlx_audio.tts.generate import load_audio
 
@@ -276,11 +263,10 @@ def _generate_streaming_with_metrics(
     total_samples = 0
     last_rtf = 0.0
 
-    # Stream generation
+    # Stream generation (speed not supported by Chatterbox)
     for result in model.generate(
         text,
         ref_audio=ref_audio_data,
-        speed=speed,
         stream=True,
         streaming_interval=streaming_interval,
     ):
@@ -330,7 +316,6 @@ def _generate_non_streaming_with_metrics(
     model: Any,
     ref_audio: str,
     ref_text: str,
-    speed: float,
     play: bool,
     save_path: str | None,
     verbose: bool,
@@ -339,6 +324,8 @@ def _generate_non_streaming_with_metrics(
     Generate speech without streaming and capture timing metrics.
 
     Uses generate_audio for backwards compatibility with file saving.
+
+    Note: Speed parameter is not passed as Chatterbox does not support it.
     """
     from mlx_audio.tts.generate import generate_audio
 
@@ -354,10 +341,10 @@ def _generate_non_streaming_with_metrics(
         "model": model,
         "ref_audio": ref_audio,
         "ref_text": ref_text,
-        "speed": speed,
         "play": play,
         "verbose": verbose,
         "stream": False,
+        # Note: speed not included - Chatterbox doesn't support it
     }
     if file_prefix:
         gen_kwargs["file_prefix"] = file_prefix
@@ -388,7 +375,6 @@ def _generate_non_streaming_with_metrics(
 
 def speak_mlx(
     message: str,
-    speed: float | None = None,
     ref_audio: str | None = None,
     stream: bool = True,
 ) -> None:
@@ -399,16 +385,16 @@ def speak_mlx(
     Automatically uses cached model for fast subsequent calls.
     Streaming is enabled by default for lowest latency.
 
+    Note: Speed parameter is not supported by Chatterbox model.
+
     Args:
         message: Text to speak.
-        speed: Speech speed multiplier (default from config).
         ref_audio: Optional custom voice reference.
         stream: Enable streaming for reduced time-to-first-audio (default True).
     """
     generate_speech(
         text=message,
         ref_audio=ref_audio,
-        speed=speed,
         play=True,
         stream=stream,
     )
