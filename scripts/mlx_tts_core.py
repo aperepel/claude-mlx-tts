@@ -307,9 +307,19 @@ def _generate_streaming_with_metrics(
     # Wait for playback to finish
     play_time = 0.0
     if player:
-        play_start = time.perf_counter()
-        player.wait_for_drain()
-        play_time = time.perf_counter() - play_start
+        # Handle short audio that didn't meet the min buffer threshold:
+        # If stream hasn't started but we have audio, force start it
+        if not player.playing and player.buffered_samples() > 0:
+            log.debug("Force-starting stream for short audio clip")
+            player.start_stream()
+
+        # Only wait for drain if stream is actually playing
+        if player.playing:
+            play_start = time.perf_counter()
+            player.wait_for_drain()
+            play_time = time.perf_counter() - play_start
+        elif player.buffered_samples() == 0:
+            log.debug("No audio to play, skipping drain wait")
 
     # Calculate audio duration
     audio_duration = total_samples / model.sample_rate if model.sample_rate > 0 else 0.0
