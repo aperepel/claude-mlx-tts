@@ -33,6 +33,8 @@ from textual.widgets.option_list import Option
 from textual.message import Message
 from textual.worker import Worker
 from textual import work
+from pathlib import Path
+import re
 
 import tts_config
 from tts_config import (
@@ -823,6 +825,367 @@ class PreviewWidget(Container):
             display.update(f'"{phrase}"')
 
 
+# Voice name validation pattern
+VOICE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+class CloneLabWidget(Container):
+    """Widget for voice cloning workflow."""
+
+    DEFAULT_CSS = """
+    CloneLabWidget {
+        height: auto;
+        padding: 1 2;
+        width: 100%;
+    }
+    CloneLabWidget > .clone-form {
+        height: auto;
+        width: 100%;
+        padding: 1 0;
+    }
+    CloneLabWidget > .clone-form > .form-row {
+        height: 3;
+        width: 100%;
+        margin: 0 0 1 0;
+    }
+    CloneLabWidget > .clone-form > .form-row > .field-label {
+        width: 14;
+        padding: 1 1 1 0;
+    }
+    CloneLabWidget > .clone-form > .form-row > Input {
+        width: 50;
+    }
+    CloneLabWidget > .clone-form > .form-row > .validation-msg {
+        width: auto;
+        padding: 1 0 1 2;
+    }
+    CloneLabWidget > .clone-form > .button-row {
+        height: 3;
+        width: 100%;
+        margin: 1 0;
+    }
+    CloneLabWidget > .clone-form > .button-row > Button {
+        width: auto;
+        margin: 0 1 0 0;
+    }
+    CloneLabWidget > .status-section {
+        height: auto;
+        width: 100%;
+        padding: 1;
+        margin: 1 0;
+        border: round $primary-darken-2;
+    }
+    CloneLabWidget > .success-section {
+        height: auto;
+        width: 100%;
+        padding: 1 2;
+        margin: 1 0;
+        border: round green;
+        background: $success-darken-3;
+    }
+    CloneLabWidget > .success-section > .success-header {
+        text-style: bold;
+        color: $success;
+        margin: 0 0 1 0;
+    }
+    CloneLabWidget > .success-section > .test-row {
+        height: 3;
+        width: 100%;
+        margin: 1 0;
+    }
+    CloneLabWidget > .success-section > .test-row > Input {
+        width: 40;
+    }
+    CloneLabWidget > .success-section > .test-row > Button {
+        width: auto;
+        margin: 0 0 0 1;
+    }
+    CloneLabWidget > .success-section > .button-row {
+        height: 3;
+        width: 100%;
+        margin: 1 0;
+    }
+    """
+
+    class VoiceCloned(Message):
+        """Posted when a voice is successfully cloned."""
+
+        def __init__(self, voice_name: str) -> None:
+            self.voice_name = voice_name
+            super().__init__()
+
+    # State tracking
+    is_cloning = reactive(False)
+    clone_success = reactive(False)
+    cloned_voice_name = reactive("")
+    cloned_size_info = reactive("")
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._wav_valid = False
+        self._name_valid = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="clone-form"):
+            with Horizontal(classes="form-row"):
+                yield Label("Source WAV:", classes="field-label")
+                yield Input(
+                    placeholder="/path/to/voice.wav",
+                    id="wav-path-input",
+                )
+                yield Label("", id="wav-validation", classes="validation-msg")
+
+            with Horizontal(classes="form-row"):
+                yield Label("Voice Name:", classes="field-label")
+                yield Input(
+                    placeholder="my_new_voice",
+                    id="voice-name-input",
+                    restrict=r"^[a-zA-Z0-9_-]*$",
+                )
+                yield Label("", id="name-validation", classes="validation-msg")
+
+            with Horizontal(classes="button-row"):
+                yield Button("Clone Voice", id="clone-btn", variant="primary", disabled=True)
+                yield LoadingIndicator(id="clone-loading")
+
+            yield Static("", id="status-msg", classes="status-section")
+
+        with Vertical(classes="success-section", id="success-section"):
+            yield Static("", id="success-header", classes="success-header")
+            with Horizontal(classes="test-row"):
+                yield Input(
+                    value="Hello, this is my new voice!",
+                    id="test-phrase-input",
+                )
+                yield Button("Speak", id="speak-btn", variant="success")
+            with Horizontal(classes="button-row"):
+                yield Button("Clone Another", id="clone-another-btn", variant="default")
+
+    def on_mount(self) -> None:
+        """Hide elements initially."""
+        self.query_one("#clone-loading").display = False
+        self.query_one("#status-msg").display = False
+        self.query_one("#success-section").display = False
+
+    def _validate_wav_path(self, path: str) -> tuple[bool, str]:
+        """Validate WAV file path."""
+        if not path.strip():
+            return False, ""
+
+        wav_path = Path(path.strip())
+        if not wav_path.exists():
+            return False, "[red]File not found[/]"
+        if wav_path.suffix.lower() != ".wav":
+            return False, "[red]Not a WAV file[/]"
+
+        # Check file size as a proxy for duration
+        size_kb = wav_path.stat().st_size / 1024
+        if size_kb < 50:
+            return False, "[yellow]File may be too short[/]"
+
+        return True, "[green]✓[/]"
+
+    def _validate_voice_name(self, name: str) -> tuple[bool, str]:
+        """Validate voice name."""
+        if not name.strip():
+            return False, ""
+
+        cleaned = name.strip()
+        if not VOICE_NAME_PATTERN.match(cleaned):
+            return False, "[red]Use only letters, numbers, _, -[/]"
+
+        # Check if voice already exists
+        from tts_config import discover_voices
+        existing = discover_voices()
+        if cleaned in existing:
+            return False, "[yellow]Voice exists (will overwrite)[/]"
+
+        return True, "[green]✓[/]"
+
+    def _update_clone_button(self) -> None:
+        """Enable/disable clone button based on validation state."""
+        btn = self.query_one("#clone-btn", Button)
+        btn.disabled = not (self._wav_valid and self._name_valid) or self.is_cloning
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Validate inputs as user types."""
+        if event.input.id == "wav-path-input":
+            valid, msg = self._validate_wav_path(event.value)
+            self._wav_valid = valid
+            self.query_one("#wav-validation", Label).update(msg)
+            self._update_clone_button()
+        elif event.input.id == "voice-name-input":
+            valid, msg = self._validate_voice_name(event.value)
+            self._name_valid = valid
+            self.query_one("#name-validation", Label).update(msg)
+            self._update_clone_button()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "clone-btn":
+            self._start_cloning()
+        elif event.button.id == "clone-another-btn":
+            self._reset_form()
+        elif event.button.id == "speak-btn":
+            self._test_voice()
+
+    def _start_cloning(self) -> None:
+        """Start the voice cloning process."""
+        if self.is_cloning:
+            return
+
+        wav_path = self.query_one("#wav-path-input", Input).value.strip()
+        voice_name = self.query_one("#voice-name-input", Input).value.strip()
+
+        self.is_cloning = True
+        self.query_one("#clone-loading").display = True
+        self.query_one("#clone-btn", Button).disabled = True
+        self.query_one("#status-msg").update("Cloning voice... (loading model)")
+        self.query_one("#status-msg").display = True
+
+        self._run_clone_worker(wav_path, voice_name)
+
+    @work(exclusive=True, thread=True)
+    def _run_clone_worker(self, wav_path: str, voice_name: str) -> dict:
+        """Background worker for voice cloning."""
+        import subprocess
+        import sys
+        import os
+
+        scripts_dir = os.path.dirname(os.path.abspath(__file__))
+        clone_script = os.path.join(scripts_dir, "clone_voice.py")
+
+        try:
+            # Run clone_voice.py with input "y" to confirm overwrite if needed
+            result = subprocess.run(
+                [sys.executable, clone_script, wav_path, voice_name],
+                capture_output=True,
+                text=True,
+                input="y\n",
+                timeout=300,  # 5 minute timeout
+            )
+
+            if result.returncode == 0:
+                # Parse output for size info
+                output = result.stdout
+                return {
+                    "success": True,
+                    "voice_name": voice_name,
+                    "output": output,
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.stderr or result.stdout or "Unknown error",
+                }
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": "Cloning timed out after 5 minutes"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle clone worker completion."""
+        from textual.worker import WorkerState
+
+        if event.worker.name != "_run_clone_worker":
+            return
+
+        if event.state == WorkerState.SUCCESS:
+            result = event.worker.result
+            self.is_cloning = False
+            self.query_one("#clone-loading").display = False
+
+            if result.get("success"):
+                voice_name = result.get("voice_name", "")
+                output = result.get("output", "")
+
+                # Parse size info from output
+                size_info = ""
+                for line in output.split("\n"):
+                    if "Compression:" in line or "Input:" in line or "Output:" in line:
+                        size_info += line.strip() + " "
+
+                self.cloned_voice_name = voice_name
+                self.cloned_size_info = size_info.strip() or "Voice cloned successfully"
+                self.clone_success = True
+
+                # Update UI
+                self.query_one("#status-msg").display = False
+                self.query_one("#success-section").display = True
+                self.query_one("#success-header", Static).update(
+                    f"✓ Created: {voice_name}  {self.cloned_size_info}"
+                )
+
+                # Post message for voice selector refresh
+                self.post_message(self.VoiceCloned(voice_name))
+            else:
+                error = result.get("error", "Unknown error")
+                self.query_one("#status-msg").update(f"[red]Error: {error}[/]")
+                self._update_clone_button()
+
+        elif event.state in (WorkerState.ERROR, WorkerState.CANCELLED):
+            self.is_cloning = False
+            self.query_one("#clone-loading").display = False
+            self.query_one("#status-msg").update("[red]Cloning failed unexpectedly[/]")
+            self._update_clone_button()
+
+    def _reset_form(self) -> None:
+        """Reset form for another clone."""
+        self.clone_success = False
+        self.cloned_voice_name = ""
+        self.cloned_size_info = ""
+
+        self.query_one("#success-section").display = False
+        self.query_one("#wav-path-input", Input).value = ""
+        self.query_one("#voice-name-input", Input).value = ""
+        self.query_one("#wav-validation", Label).update("")
+        self.query_one("#name-validation", Label).update("")
+        self._wav_valid = False
+        self._name_valid = False
+        self._update_clone_button()
+
+    def _test_voice(self) -> None:
+        """Test the cloned voice."""
+        if not self.cloned_voice_name:
+            return
+
+        phrase = self.query_one("#test-phrase-input", Input).value.strip()
+        if not phrase:
+            return
+
+        # Set active voice to the cloned one and play
+        from tts_config import set_active_voice
+        try:
+            set_active_voice(self.cloned_voice_name)
+        except ValueError:
+            pass
+
+        self._run_test_worker(phrase)
+
+    @work(exclusive=True, thread=True)
+    def _run_test_worker(self, phrase: str) -> dict:
+        """Background worker for voice testing."""
+        import subprocess
+        import sys
+        import os
+
+        scripts_dir = os.path.dirname(os.path.abspath(__file__))
+        tts_script = os.path.join(scripts_dir, "mlx_server_utils.py")
+
+        try:
+            result = subprocess.run(
+                [sys.executable, tts_script, phrase],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            return {"success": result.returncode == 0, "stderr": result.stderr}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": "TTS timed out"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
 class VoiceLabScreen(Screen):
     """Voice Lab screen for per-voice audio shaping."""
 
@@ -985,9 +1348,10 @@ class MainScreen(Screen):
 
     BINDINGS = [
         Binding("1", "switch_tab('voice-lab')", "Voice Lab", show=True, priority=True),
-        Binding("2", "switch_tab('hooks')", "Hooks", show=True, priority=True),
-        Binding("3", "switch_tab('system')", "System", show=True, priority=True),
-        Binding("4", "switch_tab('about')", "About", show=True, priority=True),
+        Binding("2", "switch_tab('clone-lab')", "Clone Lab", show=True, priority=True),
+        Binding("3", "switch_tab('hooks')", "Hooks", show=True, priority=True),
+        Binding("4", "switch_tab('system')", "System", show=True, priority=True),
+        Binding("5", "switch_tab('about')", "About", show=True, priority=True),
     ]
 
     def compose(self) -> ComposeResult:
@@ -1000,6 +1364,14 @@ class MainScreen(Screen):
                         yield CompressorWidget(id="compressor-widget")
                         yield LimiterWidget(id="limiter-widget")
                 yield PreviewWidget(id="preview-widget")
+            with TabPane("Clone Lab", id="clone-lab"):
+                yield Label("Voice Cloning", classes="section-title")
+                yield Static(
+                    "Clone a voice from a WAV file (7-20 seconds recommended). "
+                    "The voice will be saved as a compact embedding file.",
+                    classes="info",
+                )
+                yield CloneLabWidget(id="clone-lab-widget")
             with TabPane("Hooks", id="hooks"):
                 yield Label("Per-Hook Voice Settings", classes="section-title")
                 yield Static(
@@ -1035,7 +1407,12 @@ class MainScreen(Screen):
                 yield Label("Claude MLX TTS", classes="title")
                 yield Static(
                     "Voice-cloned TTS notifications for Claude Code using MLX.\n\n"
-                    "Use keyboard shortcuts 1/2/3/4 to navigate tabs."
+                    "Use keyboard shortcuts 1-5 to navigate tabs:\n"
+                    "  1 - Voice Lab (per-voice audio settings)\n"
+                    "  2 - Clone Lab (voice cloning)\n"
+                    "  3 - Hooks (per-hook voice overrides)\n"
+                    "  4 - System (server status, streaming)\n"
+                    "  5 - About (this screen)"
                 )
         yield Footer()
 
@@ -1061,6 +1438,18 @@ class MainScreen(Screen):
         """Handle voice change - refresh compressor and limiter widgets with new voice's settings."""
         self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
         self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
+
+    def on_clone_lab_widget_voice_cloned(self, event: CloneLabWidget.VoiceCloned) -> None:
+        """Handle voice cloned - refresh voice selector with new voice."""
+        voice_selector = self.query_one(VoiceSelector)
+        option_list = voice_selector.query_one("#voice-list", OptionList)
+
+        # Add the new voice to the list
+        display_name = get_voice_display(event.voice_name)
+        option_list.add_option(Option(display_name, id=event.voice_name))
+
+        # Notify user
+        self.notify(f"Voice '{event.voice_name}' created successfully!", severity="information")
 
 
 class TTSConfigApp(App):
