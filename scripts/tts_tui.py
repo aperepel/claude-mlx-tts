@@ -606,6 +606,7 @@ class VoiceSelector(Container):
         try:
             set_active_voice(voice_name)
             self.post_message(self.VoiceChanged(voice_name))
+            self.notify("Voice settings saved", severity="information")
         except ValueError as e:
             self.notify(str(e), severity="error")
 
@@ -668,6 +669,9 @@ class FormField(Horizontal):
         width: 14;
         padding: 1 1 1 0;
     }
+    FormField > .label.highlight {
+        color: $accent;
+    }
     FormField > Input {
         width: 12;
     }
@@ -693,6 +697,7 @@ class FormField(Horizontal):
         max_val: float,
         unit: str = "",
         param_key: str = "",
+        highlight: bool = False,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -702,9 +707,11 @@ class FormField(Horizontal):
         self._max = max_val
         self._unit = unit
         self._param_key = param_key
+        self._highlight = highlight
 
     def compose(self) -> ComposeResult:
-        yield Label(f"{self._label}:", classes="label")
+        label_classes = "label highlight" if self._highlight else "label"
+        yield Label(f"{self._label}:", classes=label_classes)
         # Restrict to digits, minus, decimal point (no scientific notation)
         yield Input(
             value=self._format_value(),
@@ -792,6 +799,11 @@ class CompressorWidget(Container):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._config = get_compressor_config()
+        self._initialized = False
+
+    def on_mount(self) -> None:
+        """Mark widget as initialized after mount to prevent startup notifications."""
+        self._initialized = True
 
     def compose(self) -> ComposeResult:
         self.border_title = "Compressor"
@@ -812,6 +824,7 @@ class CompressorWidget(Container):
                 "Input Gain", config.get("input_gain_db", 0.0),
                 min_val=-12, max_val=12, unit="dB",
                 param_key="input_gain_db", id="input-gain-field",
+                highlight=True,
             )
             yield FormField(
                 "Threshold", config.get("threshold_db", -18),
@@ -845,6 +858,8 @@ class CompressorWidget(Container):
         if param_key:
             try:
                 set_compressor_setting(param_key, event.value)
+                if self._initialized:
+                    self.notify("Voice settings saved", severity="information")
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
@@ -865,6 +880,8 @@ class CompressorWidget(Container):
         if event.switch.id == "compressor-enabled":
             try:
                 set_compressor_setting("enabled", event.value)
+                if self._initialized:
+                    self.notify("Voice settings saved", severity="information")
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
@@ -874,6 +891,8 @@ class CompressorWidget(Container):
             preset = COMPRESSOR_PRESETS.get(event.value)
             if preset:
                 self._apply_preset(preset)
+                if self._initialized:
+                    self.notify("Voice settings saved", severity="information")
 
     def _apply_preset(self, preset: dict) -> None:
         """Apply a compressor preset."""
@@ -923,6 +942,11 @@ class LimiterWidget(Container):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._config = get_limiter_config()
+        self._initialized = False
+
+    def on_mount(self) -> None:
+        """Mark widget as initialized after mount to prevent startup notifications."""
+        self._initialized = True
 
     def compose(self) -> ComposeResult:
         self.border_title = "Limiter"
@@ -956,6 +980,7 @@ class LimiterWidget(Container):
                 "Master Gain", compressor_config.get("master_gain_db", 0.0),
                 min_val=-12, max_val=12, unit="dB",
                 param_key="master_gain_db", id="master-gain-field",
+                highlight=True,
             )
 
     def on_form_field_changed(self, event: FormField.Changed) -> None:
@@ -968,6 +993,8 @@ class LimiterWidget(Container):
                     set_compressor_setting(param_key, event.value)
                 else:
                     set_limiter_setting(param_key, event.value)
+                if self._initialized:
+                    self.notify("Voice settings saved", severity="information")
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
@@ -986,6 +1013,8 @@ class LimiterWidget(Container):
         if event.switch.id == "limiter-enabled":
             try:
                 set_limiter_setting("enabled", event.value)
+                if self._initialized:
+                    self.notify("Voice settings saved", severity="information")
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
@@ -995,6 +1024,8 @@ class LimiterWidget(Container):
             preset = LIMITER_PRESETS.get(event.value)
             if preset:
                 self._apply_preset(preset)
+                if self._initialized:
+                    self.notify("Voice settings saved", severity="information")
 
     def _apply_preset(self, preset: dict) -> None:
         """Apply a limiter preset."""
@@ -1040,6 +1071,15 @@ class HookVoiceSelector(Container):
     def __init__(self, hook_type: str, **kwargs) -> None:
         super().__init__(**kwargs)
         self._hook_type = hook_type
+        self._initialized = False
+
+    def on_mount(self) -> None:
+        """Schedule initialization flag after initial events are processed."""
+        self.call_later(self._mark_initialized)
+
+    def _mark_initialized(self) -> None:
+        """Mark widget as initialized - called after initial Changed events."""
+        self._initialized = True
 
     def compose(self) -> ComposeResult:
         voices = discover_voices()
@@ -1067,6 +1107,8 @@ class HookVoiceSelector(Container):
             voice = event.value if event.value else None
             try:
                 set_hook_voice(self._hook_type, voice)
+                if self._initialized:
+                    self.notify("Hook settings saved", severity="information")
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
