@@ -37,10 +37,6 @@ log = logging.getLogger(__name__)
 
 # Configuration - can be overridden by environment variables
 MLX_MODEL = os.environ.get("MLX_TTS_MODEL", "mlx-community/chatterbox-turbo-fp16")
-MLX_VOICE_REF = os.environ.get(
-    "MLX_TTS_VOICE_REF",
-    os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
-)
 
 # Default streaming interval fallback
 DEFAULT_STREAMING_INTERVAL = 0.5
@@ -126,6 +122,7 @@ def generate_speech(
     stream: bool = True,
     streaming_interval: float | None = None,
     return_metrics: bool = False,
+    voice_name: str | None = None,
 ) -> dict[str, float] | None:
     """
     Generate speech from text using MLX TTS.
@@ -136,7 +133,7 @@ def generate_speech(
     Args:
         text: Text to convert to speech.
         model: Pre-loaded model (uses cached model if None).
-        ref_audio: Path to voice reference WAV file.
+        ref_audio: Path to voice reference WAV file (legacy, use voice_name instead).
         ref_text: Transcript of reference audio.
         play: Whether to play audio immediately.
         save_path: Optional path to save audio file.
@@ -144,6 +141,8 @@ def generate_speech(
         stream: Enable streaming for reduced time-to-first-audio.
         streaming_interval: Chunk interval in seconds (default 0.5s from config).
         return_metrics: If True, return dict with timing metrics.
+        voice_name: Voice name (without extension). Uses format-agnostic loading.
+                    If None, uses active voice from config.
 
     Returns:
         If return_metrics=True, returns dict with:
@@ -163,13 +162,17 @@ def generate_speech(
     if model is None:
         model = get_model()
 
-    # Set defaults
-    actual_ref_audio = ref_audio or MLX_VOICE_REF
-    actual_streaming_interval = streaming_interval if streaming_interval is not None else _get_configured_streaming_interval()
+    # Determine voice source: voice_name takes priority over ref_audio
+    actual_voice_name = voice_name
+    actual_ref_audio = ref_audio
 
-    # Verify voice reference exists
-    if not os.path.exists(actual_ref_audio):
-        log.warning(f"Voice reference not found: {actual_ref_audio}")
+    if actual_voice_name is None and actual_ref_audio is None:
+        # Neither specified - use active voice from config
+        from tts_config import get_active_voice
+        actual_voice_name = get_active_voice()
+        log.debug(f"Using active voice from config: {actual_voice_name}")
+
+    actual_streaming_interval = streaming_interval if streaming_interval is not None else _get_configured_streaming_interval()
 
     # Warn about save_path incompatibility with streaming
     if stream and save_path:
@@ -186,21 +189,23 @@ def generate_speech(
             metrics = _generate_streaming_with_metrics(
                 text=text,
                 model=model,
-                ref_audio=actual_ref_audio,
                 ref_text=ref_text,
                 play=play,
                 streaming_interval=actual_streaming_interval,
+                voice_name=actual_voice_name,
+                ref_audio=actual_ref_audio,
             )
         else:
             # Non-streaming mode: use generate_audio for file saving support
             metrics = _generate_non_streaming_with_metrics(
                 text=text,
                 model=model,
-                ref_audio=actual_ref_audio,
                 ref_text=ref_text,
                 play=play,
                 save_path=save_path,
                 verbose=verbose,
+                voice_name=actual_voice_name,
+                ref_audio=actual_ref_audio,
             )
 
         # Log metrics
@@ -221,10 +226,11 @@ def generate_speech(
 def _generate_streaming_with_metrics(
     text: str,
     model: Any,
-    ref_audio: str,
     ref_text: str,
     play: bool,
     streaming_interval: float,
+    voice_name: str | None = None,
+    ref_audio: str | None = None,
 ) -> dict[str, float]:
     """
     Generate speech with streaming and capture timing metrics.
@@ -233,14 +239,24 @@ def _generate_streaming_with_metrics(
     while capturing TTFT and other metrics. Audio is processed through
     compressor/limiter for consistent volume levels.
 
+    Voice loading:
+    - If voice_name is provided, use get_voice_conditionals() (format-agnostic)
+    - If ref_audio is provided (for backwards compat), load from file
+
     Note: Speed parameter is not passed to model.generate() as
     Chatterbox does not support speed adjustment.
     """
-    from mlx_audio.tts.generate import load_audio
-
-    # Load reference audio for voice cloning
+    # Determine voice loading strategy
     ref_audio_data = None
-    if ref_audio and os.path.exists(ref_audio):
+
+    if voice_name is not None:
+        # Format-agnostic voice loading by name
+        from voice_cache import get_voice_conditionals
+        model._conds = get_voice_conditionals(model, voice_name)
+        log.debug(f"Loaded voice conditionals for: {voice_name}")
+    elif ref_audio and os.path.exists(ref_audio):
+        # Load from ref_audio file path
+        from mlx_audio.tts.generate import load_audio
         ref_audio_data = load_audio(ref_audio, sample_rate=model.sample_rate)
 
     # Initialize player if needed
@@ -314,20 +330,41 @@ def _generate_streaming_with_metrics(
 def _generate_non_streaming_with_metrics(
     text: str,
     model: Any,
-    ref_audio: str,
     ref_text: str,
     play: bool,
     save_path: str | None,
     verbose: bool,
+    voice_name: str | None = None,
+    ref_audio: str | None = None,
 ) -> dict[str, float]:
     """
     Generate speech without streaming and capture timing metrics.
 
     Uses generate_audio for backwards compatibility with file saving.
 
+    Voice loading:
+    - If voice_name is provided, pre-loads conditionals using format-agnostic loader
+    - If ref_audio is provided (for backwards compat), passes to generate_audio
+
     Note: Speed parameter is not passed as Chatterbox does not support it.
     """
     from mlx_audio.tts.generate import generate_audio
+
+    # Pre-load voice conditionals if voice_name is provided
+    actual_ref_audio = ref_audio
+    if voice_name is not None:
+        from voice_cache import get_voice_conditionals
+        from tts_config import resolve_voice_path
+        model._conds = get_voice_conditionals(model, voice_name)
+        # For generate_audio, we still need a ref_audio path, but it won't be used
+        # since _conds is already set. Try to get the wav path for consistency.
+        try:
+            voice_path = resolve_voice_path(voice_name)
+            if voice_path.suffix == ".wav":
+                actual_ref_audio = str(voice_path)
+        except ValueError:
+            pass  # Use whatever ref_audio was provided
+        log.debug(f"Pre-loaded voice conditionals for: {voice_name}")
 
     # Determine file_prefix from save_path
     file_prefix = None
@@ -339,7 +376,7 @@ def _generate_non_streaming_with_metrics(
     gen_kwargs = {
         "text": text,
         "model": model,
-        "ref_audio": ref_audio,
+        "ref_audio": actual_ref_audio,
         "ref_text": ref_text,
         "play": play,
         "verbose": verbose,
@@ -377,6 +414,7 @@ def speak_mlx(
     message: str,
     ref_audio: str | None = None,
     stream: bool = True,
+    voice_name: str | None = None,
 ) -> None:
     """
     High-level function to speak a message using MLX TTS.
@@ -389,26 +427,29 @@ def speak_mlx(
 
     Args:
         message: Text to speak.
-        ref_audio: Optional custom voice reference.
+        ref_audio: Optional custom voice reference (legacy, use voice_name instead).
         stream: Enable streaming for reduced time-to-first-audio (default True).
+        voice_name: Voice name (without extension). Uses format-agnostic loading.
     """
     generate_speech(
         text=message,
         ref_audio=ref_audio,
         play=True,
         stream=stream,
+        voice_name=voice_name,
     )
 
 
 def is_mlx_available() -> bool:
     """
-    Check if MLX TTS is available (mlx_audio installed + voice reference exists).
+    Check if MLX TTS is available (mlx_audio installed + at least one voice exists).
 
     Returns:
         True if MLX TTS can be used, False otherwise.
     """
     try:
         import mlx_audio  # noqa: F401
-        return os.path.exists(MLX_VOICE_REF)
+        from tts_config import discover_voices
+        return len(discover_voices()) > 0
     except ImportError:
         return False

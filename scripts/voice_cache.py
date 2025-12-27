@@ -28,7 +28,9 @@ __all__ = [
     "is_cache_valid",
     "save_conditionals",
     "load_conditionals",
+    "load_conditionals_from_file",
     "get_or_prepare_conditionals",
+    "get_voice_conditionals",
 ]
 
 # Cache directory for voice conditionals (plugin-local)
@@ -161,6 +163,53 @@ def load_conditionals(voice_ref: str) -> "Conditionals | None":
         return None
 
 
+def load_conditionals_from_file(safetensors_path: Path) -> "Conditionals":
+    """
+    Load pre-computed conditionals directly from a safetensors file.
+
+    Unlike load_conditionals(), this function loads directly from the given path
+    without requiring a source WAV reference for cache key lookup.
+
+    Args:
+        safetensors_path: Path to the safetensors file containing voice conditionals.
+
+    Returns:
+        Conditionals object with voice embeddings.
+
+    Raises:
+        FileNotFoundError: If the safetensors file doesn't exist.
+    """
+    if not safetensors_path.exists():
+        raise FileNotFoundError(f"Safetensors file not found: {safetensors_path}")
+
+    arrays = mx.load(str(safetensors_path))
+
+    # Import the types we need
+    from mlx_audio.tts.models.chatterbox_turbo.chatterbox_turbo import (
+        Conditionals,
+        T3Cond,
+    )
+
+    # Reconstruct T3Cond
+    t3_cond = T3Cond(
+        speaker_emb=arrays["t3_speaker_emb"],
+        cond_prompt_speech_tokens=arrays["t3_cond_prompt_speech_tokens"],
+        clap_emb=arrays.get("t3_clap_emb"),
+        cond_prompt_speech_emb=arrays.get("t3_cond_prompt_speech_emb"),
+        emotion_adv=arrays.get("t3_emotion_adv"),
+    )
+
+    # Reconstruct gen dict
+    gen = {}
+    for key, value in arrays.items():
+        if key.startswith("gen_"):
+            gen_key = key[4:]  # Remove "gen_" prefix
+            gen[gen_key] = value
+
+    log.debug(f"Loaded conditionals from: {safetensors_path}")
+    return Conditionals(t3=t3_cond, gen=gen)
+
+
 def get_or_prepare_conditionals(model: Any, voice_ref: str) -> "Conditionals":
     """
     Main entry point - load from cache or extract and cache.
@@ -188,3 +237,38 @@ def get_or_prepare_conditionals(model: Any, voice_ref: str) -> "Conditionals":
     log.info(f"Cached voice conditionals for: {voice_ref}")
 
     return conds
+
+
+def get_voice_conditionals(model: Any, voice_name: str) -> "Conditionals":
+    """
+    Unified entry point - format-agnostic loading by voice name.
+
+    Resolution priority:
+    1. assets/{name}.safetensors → load directly (fastest)
+    2. assets/{name}.wav → load from cache or extract
+
+    Args:
+        model: The TTS model with prepare_conditionals method.
+        voice_name: The voice name (without extension).
+
+    Returns:
+        Conditionals object (from safetensors or wav extraction).
+
+    Raises:
+        ValueError: If no voice files found for the given name.
+    """
+    assets = _PLUGIN_ROOT / "assets"
+
+    # Priority 1: Pre-computed safetensors (fastest)
+    safetensors_path = assets / f"{voice_name}.safetensors"
+    if safetensors_path.exists():
+        log.info(f"Loading pre-computed conditionals from: {safetensors_path}")
+        return load_conditionals_from_file(safetensors_path)
+
+    # Priority 2: WAV with cache fallback
+    wav_path = assets / f"{voice_name}.wav"
+    if wav_path.exists():
+        log.info(f"Loading conditionals from WAV: {wav_path}")
+        return get_or_prepare_conditionals(model, str(wav_path))
+
+    raise ValueError(f"No voice files found for: {voice_name}")

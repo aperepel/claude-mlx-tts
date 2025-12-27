@@ -62,26 +62,46 @@ MLX_VOICE_REF = os.environ.get(
 )
 
 
-def prewarm_voice_cache(model, voice_ref: str) -> bool:
+def get_default_voice_name() -> str:
+    """Get the default voice name from config or environment."""
+    try:
+        from tts_config import get_active_voice
+        return get_active_voice()
+    except ImportError:
+        # Fallback: extract name from MLX_VOICE_REF path
+        return Path(MLX_VOICE_REF).stem
+
+
+def prewarm_voice_cache(model, voice_name: str | None = None) -> bool:
     """
     Pre-warm the model with cached voice conditionals.
 
-    Returns True if cache was used, False if fresh extraction was needed.
+    Uses format-agnostic loading: prefers .safetensors, falls back to .wav.
+
+    Args:
+        model: The TTS model to pre-warm.
+        voice_name: Voice name (without extension). Uses active voice if None.
+
+    Returns True if using pre-computed embeddings, False if extracted from wav.
     """
     try:
-        from voice_cache import get_or_prepare_conditionals, is_cache_valid
+        from voice_cache import get_voice_conditionals
+        from tts_config import get_voice_format
 
-        cache_hit = is_cache_valid(voice_ref)
-        log.info(f"Voice cache {'hit' if cache_hit else 'miss'} for: {voice_ref}")
+        if voice_name is None:
+            voice_name = get_default_voice_name()
 
-        # Load or prepare conditionals
-        conds = get_or_prepare_conditionals(model, voice_ref)
+        fmt = get_voice_format(voice_name)
+        log.info(f"Loading voice '{voice_name}' (format: {fmt or 'unknown'})")
+
+        # Load conditionals using format-agnostic loader
+        conds = get_voice_conditionals(model, voice_name)
 
         # Set model's internal conditionals
         model._conds = conds
 
-        log.info("Voice conditionals pre-warmed successfully")
-        return cache_hit
+        log.info(f"Voice conditionals pre-warmed successfully: {voice_name}")
+        return fmt == "safetensors"
 
     except Exception as e:
         log.warning(f"Failed to pre-warm voice cache: {e}")
@@ -162,13 +182,16 @@ def main():
     parser.add_argument("--port", type=int, default=21099, help="Server port")
     parser.add_argument("--host", default="0.0.0.0", help="Server host")
     parser.add_argument("--workers", type=int, default=1, help="Number of workers")
-    parser.add_argument("--voice", default=MLX_VOICE_REF, help="Default voice reference")
+    parser.add_argument("--voice", default=None, help="Voice name (without extension)")
     parser.add_argument("--model", default=MLX_MODEL, help="TTS model to use")
     args = parser.parse_args()
 
+    # Determine voice name
+    voice_name = args.voice or get_default_voice_name()
+
     log.info(f"Starting TTS server with voice caching...")
     log.info(f"Model: {args.model}")
-    log.info(f"Voice: {args.voice}")
+    log.info(f"Voice: {voice_name}")
 
     # Import server components
     from mlx_audio.server import app, model_provider
@@ -179,11 +202,12 @@ def main():
     model = model_provider.load_model(args.model)
     log.info(f"Model loaded: {type(model).__name__}")
 
-    # Pre-warm voice cache
-    prewarm_voice_cache(model, args.voice)
+    # Pre-warm voice cache with format-agnostic loading
+    prewarm_voice_cache(model, voice_name)
 
-    # Patch model to use cache
-    patch_model_generate(model, args.voice)
+    # Patch model to use cache (uses legacy path for API compatibility)
+    # The patched generate will use pre-set _conds when ref_audio matches default
+    patch_model_generate(model, MLX_VOICE_REF)
 
     # Start server (single process to preserve model state)
     log.info(f"Starting server on {args.host}:{args.port}")

@@ -1357,3 +1357,215 @@ class TestResetVoiceToDefaults:
 
             saved = mock_save.call_args[0][0]
             assert saved["voices"]["other_voice"]["compressor"] == DEFAULT_COMPRESSOR
+
+
+# =============================================================================
+# Format-Aware Voice Discovery Tests (mlx-tts-e6g)
+# =============================================================================
+
+
+class TestDiscoverVoicesWithSafetensors:
+    """Tests for discover_voices finding both .wav and .safetensors files."""
+
+    def test_discover_voices_finds_safetensors_files(self):
+        """discover_voices should find .safetensors files in assets directory."""
+        from tts_config import discover_voices
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "embedded_voice.safetensors").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                voices = discover_voices()
+
+            assert "embedded_voice" in voices
+
+    def test_discover_voices_finds_both_formats(self):
+        """discover_voices should find both .wav and .safetensors files."""
+        from tts_config import discover_voices
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "wav_voice.wav").touch()
+            (assets_dir / "embedded_voice.safetensors").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                voices = discover_voices()
+
+            assert "wav_voice" in voices
+            assert "embedded_voice" in voices
+
+    def test_discover_voices_deduplicates_when_both_exist(self):
+        """discover_voices should deduplicate when both .wav and .safetensors exist."""
+        from tts_config import discover_voices
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "my_voice.wav").touch()
+            (assets_dir / "my_voice.safetensors").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                voices = discover_voices()
+
+            # Should only appear once
+            assert voices.count("my_voice") == 1
+
+    def test_discover_voices_strips_safetensors_extension(self):
+        """discover_voices should return names without .safetensors extension."""
+        from tts_config import discover_voices
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "my_voice.safetensors").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                voices = discover_voices()
+
+            assert "my_voice" in voices
+            assert "my_voice.safetensors" not in voices
+
+
+class TestGetVoiceFormat:
+    """Tests for get_voice_format function."""
+
+    def test_get_voice_format_returns_safetensors(self):
+        """get_voice_format should return 'safetensors' for .safetensors files."""
+        from tts_config import get_voice_format
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "my_voice.safetensors").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                fmt = get_voice_format("my_voice")
+
+            assert fmt == "safetensors"
+
+    def test_get_voice_format_returns_wav(self):
+        """get_voice_format should return 'wav' for .wav files."""
+        from tts_config import get_voice_format
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "my_voice.wav").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                fmt = get_voice_format("my_voice")
+
+            assert fmt == "wav"
+
+    def test_get_voice_format_prefers_safetensors(self):
+        """get_voice_format should return 'safetensors' when both exist."""
+        from tts_config import get_voice_format
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "my_voice.wav").touch()
+            (assets_dir / "my_voice.safetensors").touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                fmt = get_voice_format("my_voice")
+
+            assert fmt == "safetensors"
+
+    def test_get_voice_format_returns_none_for_nonexistent(self):
+        """get_voice_format should return None for nonexistent voice."""
+        from tts_config import get_voice_format
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                fmt = get_voice_format("nonexistent_voice")
+
+            assert fmt is None
+
+
+class TestResolveVoicePathWithSafetensors:
+    """Tests for resolve_voice_path with safetensors support."""
+
+    def test_resolve_voice_path_prefers_safetensors(self):
+        """resolve_voice_path should return .safetensors path when both exist."""
+        from tts_config import resolve_voice_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            wav_file = assets_dir / "my_voice.wav"
+            wav_file.touch()
+            safetensors_file = assets_dir / "my_voice.safetensors"
+            safetensors_file.touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                path = resolve_voice_path("my_voice")
+
+            assert path == safetensors_file
+
+    def test_resolve_voice_path_falls_back_to_wav(self):
+        """resolve_voice_path should return .wav path when only wav exists."""
+        from tts_config import resolve_voice_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            wav_file = assets_dir / "my_voice.wav"
+            wav_file.touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                path = resolve_voice_path("my_voice")
+
+            assert path == wav_file
+
+    def test_resolve_voice_path_returns_safetensors_only(self):
+        """resolve_voice_path should work when only .safetensors exists."""
+        from tts_config import resolve_voice_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            safetensors_file = assets_dir / "embedded_voice.safetensors"
+            safetensors_file.touch()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                path = resolve_voice_path("embedded_voice")
+
+            assert path == safetensors_file
+
+    def test_resolve_voice_path_security_validation_for_safetensors(self):
+        """resolve_voice_path should apply security validation for safetensors."""
+        from tts_config import resolve_voice_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                # Path traversal should still be rejected
+                with pytest.raises(ValueError, match="Invalid voice name"):
+                    resolve_voice_path("../../../etc/passwd")
+
+    def test_resolve_voice_path_rejects_symlink_escape_for_safetensors(self):
+        """resolve_voice_path should reject symlinks pointing outside assets for safetensors."""
+        from tts_config import resolve_voice_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+            # Create a file outside assets
+            outside_file = Path(tmpdir) / "secret.safetensors"
+            outside_file.touch()
+            # Create a symlink inside assets pointing to the outside file
+            symlink = assets_dir / "evil_voice.safetensors"
+            symlink.symlink_to(outside_file)
+
+            with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
+                with pytest.raises(ValueError, match="Invalid voice name"):
+                    resolve_voice_path("evil_voice")

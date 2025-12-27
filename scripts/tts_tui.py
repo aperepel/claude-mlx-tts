@@ -47,6 +47,7 @@ from tts_config import (
     get_hook_voice,
     get_limiter_config,
     get_streaming_interval,
+    get_voice_format,
     reset_all_audio_to_defaults,
     set_active_voice,
     set_compressor_setting,
@@ -103,6 +104,20 @@ LIMITER_PRESETS = {
         "release_ms": 50,
     },
 }
+
+
+def get_voice_display(voice_name: str) -> str:
+    """Get voice name with format indicator for display.
+
+    Returns:
+        Voice name with format tag: "[embedded]" for safetensors, "[wav]" for wav.
+    """
+    fmt = get_voice_format(voice_name)
+    if fmt == "safetensors":
+        return f"{voice_name}  [embedded]"
+    elif fmt == "wav":
+        return f"{voice_name}  [wav]"
+    return voice_name
 
 
 def get_server_status() -> dict:
@@ -179,7 +194,8 @@ class VoiceSelector(Container):
 
         option_list = OptionList(id="voice-list")
         for voice in voices:
-            option_list.add_option(Option(voice, id=voice))
+            display_name = get_voice_display(voice)
+            option_list.add_option(Option(display_name, id=voice))
 
         yield option_list
 

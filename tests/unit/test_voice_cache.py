@@ -596,3 +596,237 @@ class TestVoiceCachePerformance:
         finally:
             os.unlink(temp_path)
             cache_path.unlink(missing_ok=True)
+
+
+# =============================================================================
+# Tests for load_conditionals_from_file (mlx-tts-36a)
+# =============================================================================
+
+
+class TestLoadConditionalsFromFile:
+    """Tests for load_conditionals_from_file function."""
+
+    def test_loads_safetensors_directly(self):
+        """load_conditionals_from_file should load pre-computed conditionals from safetensors."""
+        from voice_cache import load_conditionals_from_file, save_conditionals, CACHE_DIR
+
+        import mlx.core as mx
+
+        # Create a test safetensors file by saving mock conditionals
+        mock_conds = MagicMock()
+        mock_conds.t3 = MagicMock()
+        mock_conds.t3.speaker_emb = mx.array([[0.1, 0.2, 0.3]])
+        mock_conds.t3.cond_prompt_speech_tokens = mx.array([[1, 2, 3]])
+        mock_conds.t3.clap_emb = None
+        mock_conds.t3.cond_prompt_speech_emb = None
+        mock_conds.t3.emotion_adv = None
+        mock_conds.gen = {
+            "prompt_token": mx.array([[1, 2]]),
+            "prompt_token_len": mx.array([2]),
+            "prompt_feat": mx.array([[[0.1, 0.2]]]),
+            "prompt_feat_len": mx.array([1]),
+            "embedding": mx.array([[0.5, 0.6]]),
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            safetensors_path = Path(tmpdir) / "test_voice.safetensors"
+
+            # Save mock data to safetensors
+            arrays = {}
+            arrays["t3_speaker_emb"] = mock_conds.t3.speaker_emb
+            arrays["t3_cond_prompt_speech_tokens"] = mock_conds.t3.cond_prompt_speech_tokens
+            for key, value in mock_conds.gen.items():
+                arrays[f"gen_{key}"] = value
+            mx.save_safetensors(str(safetensors_path), arrays)
+
+            # Load and verify
+            result = load_conditionals_from_file(safetensors_path)
+
+            assert result is not None
+            assert hasattr(result, "t3")
+            assert hasattr(result, "gen")
+
+    def test_returns_conditionals_type(self):
+        """load_conditionals_from_file should return a Conditionals object."""
+        from voice_cache import load_conditionals_from_file
+
+        import mlx.core as mx
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            safetensors_path = Path(tmpdir) / "test_voice.safetensors"
+
+            # Create minimal valid safetensors
+            arrays = {
+                "t3_speaker_emb": mx.array([[0.1]]),
+                "t3_cond_prompt_speech_tokens": mx.array([[1]]),
+                "gen_prompt_token": mx.array([[1]]),
+                "gen_prompt_token_len": mx.array([1]),
+                "gen_prompt_feat": mx.array([[[0.1]]]),
+                "gen_prompt_feat_len": mx.array([1]),
+                "gen_embedding": mx.array([[0.5]]),
+            }
+            mx.save_safetensors(str(safetensors_path), arrays)
+
+            result = load_conditionals_from_file(safetensors_path)
+
+            # Check it's a Conditionals namedtuple-like object
+            from mlx_audio.tts.models.chatterbox_turbo.chatterbox_turbo import Conditionals
+            assert isinstance(result, Conditionals)
+
+    def test_raises_for_nonexistent_file(self):
+        """load_conditionals_from_file should raise FileNotFoundError for missing file."""
+        from voice_cache import load_conditionals_from_file
+
+        with pytest.raises(FileNotFoundError):
+            load_conditionals_from_file(Path("/nonexistent/path/voice.safetensors"))
+
+    def test_preserves_array_values(self):
+        """load_conditionals_from_file should preserve exact array values."""
+        from voice_cache import load_conditionals_from_file
+
+        import mlx.core as mx
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            safetensors_path = Path(tmpdir) / "test_voice.safetensors"
+
+            original_emb = mx.array([[0.123, 0.456, 0.789]])
+            original_tokens = mx.array([[10, 20, 30]])
+
+            arrays = {
+                "t3_speaker_emb": original_emb,
+                "t3_cond_prompt_speech_tokens": original_tokens,
+                "gen_prompt_token": mx.array([[1]]),
+                "gen_prompt_token_len": mx.array([1]),
+                "gen_prompt_feat": mx.array([[[0.1]]]),
+                "gen_prompt_feat_len": mx.array([1]),
+                "gen_embedding": mx.array([[0.5]]),
+            }
+            mx.save_safetensors(str(safetensors_path), arrays)
+
+            result = load_conditionals_from_file(safetensors_path)
+
+            assert np.allclose(np.array(result.t3.speaker_emb), np.array(original_emb))
+            assert np.array_equal(np.array(result.t3.cond_prompt_speech_tokens), np.array(original_tokens))
+
+
+# =============================================================================
+# Tests for get_voice_conditionals (mlx-tts-36a)
+# =============================================================================
+
+
+class TestGetVoiceConditionals:
+    """Tests for get_voice_conditionals unified entry point."""
+
+    def test_prefers_safetensors_over_wav(self):
+        """get_voice_conditionals should prefer .safetensors over .wav when both exist."""
+        from voice_cache import get_voice_conditionals
+
+        import mlx.core as mx
+
+        mock_model = MagicMock()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+
+            # Create both files
+            wav_path = assets_dir / "test_voice.wav"
+            wav_path.write_bytes(b"dummy wav content")
+
+            safetensors_path = assets_dir / "test_voice.safetensors"
+            arrays = {
+                "t3_speaker_emb": mx.array([[0.1]]),
+                "t3_cond_prompt_speech_tokens": mx.array([[1]]),
+                "gen_prompt_token": mx.array([[1]]),
+                "gen_prompt_token_len": mx.array([1]),
+                "gen_prompt_feat": mx.array([[[0.1]]]),
+                "gen_prompt_feat_len": mx.array([1]),
+                "gen_embedding": mx.array([[0.5]]),
+            }
+            mx.save_safetensors(str(safetensors_path), arrays)
+
+            with patch("voice_cache._PLUGIN_ROOT", Path(tmpdir)):
+                result = get_voice_conditionals(mock_model, "test_voice")
+
+            # Model should NOT have been called (loaded from safetensors)
+            mock_model.prepare_conditionals.assert_not_called()
+            assert result is not None
+
+    def test_falls_back_to_wav_when_no_safetensors(self):
+        """get_voice_conditionals should use wav when safetensors doesn't exist."""
+        from voice_cache import get_voice_conditionals
+
+        import mlx.core as mx
+
+        mock_model = MagicMock()
+        mock_conds = MagicMock()
+        mock_conds.t3 = MagicMock()
+        mock_conds.t3.speaker_emb = mx.array([[0.1]])
+        mock_conds.t3.cond_prompt_speech_tokens = mx.array([[1]])
+        mock_conds.t3.clap_emb = None
+        mock_conds.t3.cond_prompt_speech_emb = None
+        mock_conds.t3.emotion_adv = None
+        mock_conds.gen = {"embedding": mx.array([[0.5]])}
+        mock_model._conds = mock_conds
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+
+            # Only wav file exists
+            wav_path = assets_dir / "test_voice.wav"
+            wav_path.write_bytes(b"dummy wav content")
+
+            with patch("voice_cache._PLUGIN_ROOT", Path(tmpdir)):
+                with patch("voice_cache.get_or_prepare_conditionals") as mock_get:
+                    mock_get.return_value = mock_conds
+                    result = get_voice_conditionals(mock_model, "test_voice")
+
+            # Should have called get_or_prepare_conditionals for wav
+            mock_get.assert_called_once()
+
+    def test_raises_for_nonexistent_voice(self):
+        """get_voice_conditionals should raise ValueError when neither format exists."""
+        from voice_cache import get_voice_conditionals
+
+        mock_model = MagicMock()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+
+            with patch("voice_cache._PLUGIN_ROOT", Path(tmpdir)):
+                with pytest.raises(ValueError, match="No voice files found"):
+                    get_voice_conditionals(mock_model, "nonexistent_voice")
+
+    def test_loads_safetensors_only_voice(self):
+        """get_voice_conditionals should work when only .safetensors exists."""
+        from voice_cache import get_voice_conditionals
+
+        import mlx.core as mx
+
+        mock_model = MagicMock()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir) / "assets"
+            assets_dir.mkdir()
+
+            # Only safetensors file exists (no wav)
+            safetensors_path = assets_dir / "embedded_voice.safetensors"
+            arrays = {
+                "t3_speaker_emb": mx.array([[0.1]]),
+                "t3_cond_prompt_speech_tokens": mx.array([[1]]),
+                "gen_prompt_token": mx.array([[1]]),
+                "gen_prompt_token_len": mx.array([1]),
+                "gen_prompt_feat": mx.array([[[0.1]]]),
+                "gen_prompt_feat_len": mx.array([1]),
+                "gen_embedding": mx.array([[0.5]]),
+            }
+            mx.save_safetensors(str(safetensors_path), arrays)
+
+            with patch("voice_cache._PLUGIN_ROOT", Path(tmpdir)):
+                result = get_voice_conditionals(mock_model, "embedded_voice")
+
+            assert result is not None
+            mock_model.prepare_conditionals.assert_not_called()

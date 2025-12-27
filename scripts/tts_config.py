@@ -252,16 +252,35 @@ def set_limiter_setting(key: str, value: float | bool) -> None:
 def discover_voices() -> list[str]:
     """Discover all voice files in the assets directory.
 
-    Returns list of voice names (without .wav extension).
+    Finds both .safetensors (pre-computed embeddings) and .wav files.
+    Returns list of unique voice names (without extension).
+    When both formats exist for a voice, they are deduplicated.
     """
     assets_dir = _PLUGIN_ROOT / "assets"
     if not assets_dir.exists():
         return []
 
-    voices = []
-    for wav_file in assets_dir.glob("*.wav"):
-        voices.append(wav_file.stem)
+    voices = set()
+    for ext in ("*.safetensors", "*.wav"):
+        for f in assets_dir.glob(ext):
+            voices.add(f.stem)
     return sorted(voices)
+
+
+def get_voice_format(voice_name: str) -> str | None:
+    """Return the format of a voice file.
+
+    Returns:
+        'safetensors' if .safetensors exists (preferred)
+        'wav' if only .wav exists
+        None if voice doesn't exist
+    """
+    assets_dir = _PLUGIN_ROOT / "assets"
+    if (assets_dir / f"{voice_name}.safetensors").exists():
+        return "safetensors"
+    if (assets_dir / f"{voice_name}.wav").exists():
+        return "wav"
+    return None
 
 
 def get_active_voice() -> str:
@@ -291,7 +310,11 @@ def resolve_voice_path(voice_name: str) -> Path:
     - File must exist
     - Resolved path stays within assets directory (symlink-safe)
 
-    Returns the full Path to the .wav file.
+    Resolution priority:
+    1. .safetensors (pre-computed embeddings, preferred)
+    2. .wav (source audio)
+
+    Returns the full Path to the voice file.
     Raises ValueError for invalid or non-existent voices.
     """
     # Reject absolute paths
@@ -302,19 +325,26 @@ def resolve_voice_path(voice_name: str) -> Path:
     if not VOICE_NAME_PATTERN.match(voice_name):
         raise ValueError(f"Invalid voice name: {voice_name}")
 
-    # Construct path and verify it exists
     assets_dir = _PLUGIN_ROOT / "assets"
-    voice_path = assets_dir / f"{voice_name}.wav"
-    if not voice_path.exists():
-        raise ValueError(f"Voice '{voice_name}' not found at {voice_path}")
-
-    # Symlink-safe: ensure resolved path is within assets directory
-    resolved = voice_path.resolve()
     resolved_assets = assets_dir.resolve()
-    if not str(resolved).startswith(str(resolved_assets) + "/"):
-        raise ValueError(f"Invalid voice name: {voice_name}")
 
-    return voice_path
+    # Priority 1: Check for safetensors file
+    safetensors_path = assets_dir / f"{voice_name}.safetensors"
+    if safetensors_path.exists():
+        resolved = safetensors_path.resolve()
+        if not str(resolved).startswith(str(resolved_assets) + "/"):
+            raise ValueError(f"Invalid voice name: {voice_name}")
+        return safetensors_path
+
+    # Priority 2: Fall back to wav file
+    wav_path = assets_dir / f"{voice_name}.wav"
+    if wav_path.exists():
+        resolved = wav_path.resolve()
+        if not str(resolved).startswith(str(resolved_assets) + "/"):
+            raise ValueError(f"Invalid voice name: {voice_name}")
+        return wav_path
+
+    raise ValueError(f"Voice '{voice_name}' not found")
 
 
 # =============================================================================

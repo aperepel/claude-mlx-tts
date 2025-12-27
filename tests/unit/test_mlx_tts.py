@@ -162,12 +162,13 @@ class TestIsMlxAvailable:
         result = is_mlx_available()
         assert isinstance(result, bool)
 
-    def test_is_mlx_available_checks_voice_ref(self):
-        """is_mlx_available should check voice reference file exists."""
-        from mlx_tts_core import is_mlx_available, MLX_VOICE_REF
+    def test_is_mlx_available_checks_voices_exist(self):
+        """is_mlx_available should check that at least one voice exists."""
+        from mlx_tts_core import is_mlx_available
+        from tts_config import discover_voices
 
-        # Should be True if both mlx_audio is installed and voice ref exists
-        if os.path.exists(MLX_VOICE_REF):
+        # Should be True if both mlx_audio is installed and voices exist
+        if len(discover_voices()) > 0:
             assert is_mlx_available() is True
 
 
