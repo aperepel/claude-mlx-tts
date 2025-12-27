@@ -54,10 +54,6 @@ TTS_SERVER_LOG = os.environ.get(
 
 # MLX model to preload
 MLX_MODEL = os.environ.get("MLX_TTS_MODEL", "mlx-community/chatterbox-turbo-fp16")
-MLX_VOICE_REF = os.environ.get(
-    "MLX_TTS_VOICE_REF",
-    os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
-)
 
 
 # =============================================================================
@@ -153,7 +149,14 @@ def ensure_server_running(
         log.debug(f"Server already running on port {port}")
         return
 
-    log.info(f"Starting TTS server with voice caching on port {port}")
+    # Get active voice from config
+    try:
+        from tts_config import get_active_voice
+        voice_name = get_active_voice()
+    except ImportError:
+        voice_name = None
+
+    log.info(f"Starting TTS server with voice caching on port {port} (voice: {voice_name})")
 
     # Start our custom server with voice caching pre-warm
     server_script = os.path.join(os.path.dirname(__file__), "tts_server.py")
@@ -161,9 +164,11 @@ def ensure_server_running(
         sys.executable, server_script,
         "--port", str(port),
         "--workers", "1",
-        "--voice", os.path.abspath(MLX_VOICE_REF),
         "--model", MLX_MODEL,
     ]
+    # Pass voice name if available (server will read from config if not provided)
+    if voice_name:
+        cmd.extend(["--voice", voice_name])
 
     # Log server output to file for debugging
     log_path = os.path.abspath(TTS_SERVER_LOG)

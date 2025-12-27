@@ -53,8 +53,8 @@ ATTENTION_PREFIX = "[clear throat] Attention on deck."
 
 # MLX Voice Cloning settings
 MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"
-# Voice reference: bundled in assets/, replace with your own if desired
-MLX_VOICE_REF = os.path.join(os.path.dirname(__file__), "..", "assets", "default_voice.wav")
+# Default voice name (without extension) - uses assets/default.safetensors
+DEFAULT_VOICE = "default"
 
 
 # =============================================================================
@@ -65,7 +65,7 @@ MLX_VOICE_REF = os.path.join(os.path.dirname(__file__), "..", "assets", "default
 USE_HTTP_SERVER = os.environ.get("TTS_USE_HTTP", "true").lower() == "true"
 
 
-def _generate_mlx_speech_direct(text: str, play: bool = True):
+def _generate_mlx_speech_direct(text: str, voice_name: str | None = None, play: bool = True):
     """Generate speech using direct MLX API with metrics logging."""
     if not text or not text.strip():
         return
@@ -78,14 +78,14 @@ def _generate_mlx_speech_direct(text: str, play: bool = True):
     generate_speech(
         text=text,
         model=model,
-        ref_audio=MLX_VOICE_REF,
+        voice_name=voice_name,  # Uses active voice from config if None
         ref_text=".",
         play=play,
         stream=True,
     )
 
 
-def _generate_mlx_speech_http(text: str):
+def _generate_mlx_speech_http(text: str, voice_name: str | None = None):
     """Generate speech using HTTP server (fast warm latency)."""
     if not text or not text.strip():
         return
@@ -93,10 +93,10 @@ def _generate_mlx_speech_http(text: str):
     from mlx_server_utils import speak_mlx_http, ServerStartError, TTSRequestError
 
     try:
-        speak_mlx_http(text)
+        speak_mlx_http(text, voice=voice_name)
     except (ServerStartError, TTSRequestError) as e:
         log.warning(f"HTTP TTS failed: {e}, falling back to direct API")
-        _generate_mlx_speech_direct(text, play=True)
+        _generate_mlx_speech_direct(text, voice_name=voice_name, play=True)
 
 
 # =============================================================================
@@ -104,10 +104,11 @@ def _generate_mlx_speech_http(text: str):
 # =============================================================================
 
 def is_mlx_available() -> bool:
-    """Check if MLX audio is installed and voice reference exists."""
+    """Check if MLX audio is installed and at least one voice exists."""
     try:
         import mlx_audio  # noqa: F401
-        return os.path.exists(MLX_VOICE_REF)
+        from tts_config import discover_voices
+        return len(discover_voices()) > 0
     except ImportError:
         return False
 
@@ -278,15 +279,20 @@ def speak_say(message: str):
     )
 
 
-def speak_mlx(message: str):
+def speak_mlx(message: str, hook_type: str = "stop"):
     """Speak using MLX voice cloning (HTTP server or direct API)."""
     try:
+        # Get effective voice for this hook (per-hook override or default)
+        from tts_config import get_effective_hook_voice
+        voice_name = get_effective_hook_voice(hook_type)
+        log.info(f"Using voice: {voice_name} (hook: {hook_type})")
+
         if USE_HTTP_SERVER:
             log.info("MLX TTS (HTTP)")
-            _generate_mlx_speech_http(message)
+            _generate_mlx_speech_http(message, voice_name=voice_name)
         else:
             log.info("MLX TTS (direct)")
-            _generate_mlx_speech_direct(message, play=True)
+            _generate_mlx_speech_direct(message, voice_name=voice_name, play=True)
     except Exception as e:
         log.warning(f"MLX TTS failed: {e}, falling back to macOS say")
         speak_say(message)

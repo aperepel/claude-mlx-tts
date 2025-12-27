@@ -36,12 +36,12 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 SAY_VOICE = 'Daniel'
 SAY_RATE = 180
-MLX_VOICE_REF = os.path.join('$PLUGIN_ROOT', 'assets', 'default_voice.wav')
 
 def is_mlx_available():
     try:
         import mlx_audio
-        return os.path.exists(MLX_VOICE_REF)
+        from tts_config import discover_voices
+        return len(discover_voices()) > 0
     except ImportError:
         return False
 

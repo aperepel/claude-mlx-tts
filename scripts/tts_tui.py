@@ -617,12 +617,12 @@ class HookVoiceSelector(Container):
         voices = discover_voices()
         current_voice = get_hook_voice(self._hook_type)
 
-        # Build options: "Default" + all voices
-        options = [("Use default voice", "__default__")]
+        # Build options: "-- inherit --" (uses active voice) + all available voices
+        options = [("-- inherit --", "")]
         options.extend((voice, voice) for voice in voices)
 
-        # Determine current value
-        current_value = current_voice if current_voice else "__default__"
+        # Determine current value (empty string means inherit)
+        current_value = current_voice if current_voice else ""
 
         with Horizontal(classes="hook-row"):
             yield Label(HOOK_LABELS.get(self._hook_type, self._hook_type), classes="hook-label")
@@ -635,7 +635,8 @@ class HookVoiceSelector(Container):
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle voice selection change."""
         if event.select.id == f"hook-voice-{self._hook_type}":
-            voice = None if event.value == "__default__" else event.value
+            # Empty string means inherit from active voice
+            voice = event.value if event.value else None
             try:
                 set_hook_voice(self._hook_type, voice)
             except ValueError as e:

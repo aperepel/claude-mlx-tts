@@ -56,20 +56,16 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 # Configuration
 MLX_MODEL = os.environ.get("MLX_TTS_MODEL", "mlx-community/chatterbox-turbo-fp16")
-MLX_VOICE_REF = os.environ.get(
-    "MLX_TTS_VOICE_REF",
-    str(SCRIPTS_DIR.parent / "assets" / "default_voice.wav")
-)
+DEFAULT_VOICE = "default"
 
 
 def get_default_voice_name() -> str:
-    """Get the default voice name from config or environment."""
+    """Get the default voice name from config."""
     try:
         from tts_config import get_active_voice
         return get_active_voice()
     except ImportError:
-        # Fallback: extract name from MLX_VOICE_REF path
-        return Path(MLX_VOICE_REF).stem
+        return DEFAULT_VOICE
 
 
 def prewarm_voice_cache(model, voice_name: str | None = None) -> bool:
@@ -108,40 +104,44 @@ def prewarm_voice_cache(model, voice_name: str | None = None) -> bool:
         return False
 
 
-def patch_model_generate(model, default_voice_ref: str):
+def patch_model_generate(model, initial_voice: str):
     """
-    Patch model.generate to use cached conditionals and log streaming metrics.
+    Patch model.generate for dynamic voice switching and streaming metrics.
 
-    This avoids re-extracting conditionals on every request and logs:
-    - TTFT (time to first audio chunk)
-    - Total generation time
-    - Chunk count
-    - RTF (real-time factor)
+    Checks active voice from config on each request. If voice changed,
+    reloads conditionals automatically. Logs streaming metrics.
     """
     original_generate = model.generate
     sample_rate = model.sample_rate
 
-    def cached_generate_with_metrics(
+    # Track currently loaded voice
+    state = {"current_voice": initial_voice}
+
+    def dynamic_generate_with_metrics(
         text,
         ref_audio=None,
         **kwargs
     ):
-        # Determine cache status and prepare ref_audio arg
-        use_cache = False
-        if ref_audio is None:
-            use_cache = True
-        else:
-            ref_path = os.path.abspath(str(ref_audio)) if ref_audio else None
-            default_path = os.path.abspath(default_voice_ref)
-            if ref_path == default_path:
-                use_cache = True
+        # Check if voice changed in config
+        try:
+            from tts_config import get_active_voice
+            requested_voice = get_active_voice()
+        except ImportError:
+            requested_voice = state["current_voice"]
 
-        if use_cache:
-            log.debug("[CACHE HIT] Using pre-warmed voice")
-            actual_ref_audio = None
-        else:
-            log.info(f"Different voice requested, extracting fresh: {ref_audio}")
-            actual_ref_audio = ref_audio
+        # Reload voice if changed
+        if requested_voice != state["current_voice"]:
+            log.info(f"Voice changed: {state['current_voice']} -> {requested_voice}")
+            try:
+                from voice_cache import get_voice_conditionals
+                model._conds = get_voice_conditionals(model, requested_voice)
+                state["current_voice"] = requested_voice
+                log.info(f"Loaded voice: {requested_voice}")
+            except Exception as e:
+                log.warning(f"Failed to load voice {requested_voice}: {e}")
+
+        # Use cached conditionals (ref_audio=None triggers use of model._conds)
+        actual_ref_audio = None
 
         # Wrap generator to capture metrics
         gen_start = time.perf_counter()
@@ -169,12 +169,12 @@ def patch_model_generate(model, default_voice_ref: str):
 
         # Log metrics
         log.info(
-            f"TTS: ttft={ttft:.2f}s gen={gen_time:.2f}s "
+            f"TTS [{state['current_voice']}]: ttft={ttft:.2f}s gen={gen_time:.2f}s "
             f"chunks={chunk_count} RTF={rtf:.2f}"
         )
 
-    model.generate = cached_generate_with_metrics
-    log.info("Patched model.generate to use voice cache with metrics")
+    model.generate = dynamic_generate_with_metrics
+    log.info(f"Patched model.generate for dynamic voice switching (initial: {initial_voice})")
 
 
 def main():
@@ -205,9 +205,8 @@ def main():
     # Pre-warm voice cache with format-agnostic loading
     prewarm_voice_cache(model, voice_name)
 
-    # Patch model to use cache (uses legacy path for API compatibility)
-    # The patched generate will use pre-set _conds when ref_audio matches default
-    patch_model_generate(model, MLX_VOICE_REF)
+    # Patch model for dynamic voice switching (re-reads config per request)
+    patch_model_generate(model, voice_name)
 
     # Start server (single process to preserve model state)
     log.info(f"Starting server on {args.host}:{args.port}")

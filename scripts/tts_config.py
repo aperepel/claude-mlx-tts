@@ -11,7 +11,7 @@ Schema (v1):
             "default": {"streaming_interval": 0.5}
         },
         "active_profile": "default",
-        "active_voice": "default_voice",
+        "active_voice": "default",
         "voices": {
             "my_voice": {
                 "compressor": {"gain_db": 10, "enabled": true, ...},
@@ -83,7 +83,7 @@ DEFAULT_CONFIG = {
         }
     },
     "active_profile": "default",
-    "active_voice": "default_voice",
+    "active_voice": "default",
     "voices": {},
 }
 
@@ -175,7 +175,7 @@ def set_streaming_interval(interval: float, profile: str = None) -> None:
 def get_compressor_config() -> dict:
     """Get compressor configuration for active voice. Re-reads from disk on each call."""
     config = load_config()
-    voice_name = config.get("active_voice", "default_voice")
+    voice_name = config.get("active_voice", "default")
     voices = config.get("voices", {})
     voice_config = voices.get(voice_name, {})
     compressor = voice_config.get("compressor", {})
@@ -190,7 +190,7 @@ def set_compressor_setting(key: str, value: float | bool) -> None:
         raise ValueError(f"Invalid compressor key '{key}'. Valid keys: {valid_keys}")
 
     config = load_config()
-    voice_name = config.get("active_voice", "default_voice")
+    voice_name = config.get("active_voice", "default")
 
     if "voices" not in config:
         config["voices"] = {}
@@ -216,7 +216,7 @@ def set_compressor_enabled(enabled: bool) -> None:
 def get_limiter_config() -> dict:
     """Get limiter configuration for active voice. Re-reads from disk on each call."""
     config = load_config()
-    voice_name = config.get("active_voice", "default_voice")
+    voice_name = config.get("active_voice", "default")
     voices = config.get("voices", {})
     voice_config = voices.get(voice_name, {})
     limiter = voice_config.get("limiter", {})
@@ -231,7 +231,7 @@ def set_limiter_setting(key: str, value: float | bool) -> None:
         raise ValueError(f"Invalid limiter key '{key}'. Valid keys: {valid_keys}")
 
     config = load_config()
-    voice_name = config.get("active_voice", "default_voice")
+    voice_name = config.get("active_voice", "default")
 
     if "voices" not in config:
         config["voices"] = {}
@@ -286,7 +286,7 @@ def get_voice_format(voice_name: str) -> str | None:
 def get_active_voice() -> str:
     """Get the currently active voice name."""
     config = load_config()
-    return config.get("active_voice", "default_voice")
+    return config.get("active_voice", "default")
 
 
 def set_active_voice(voice_name: str) -> None:
@@ -594,7 +594,7 @@ def get_all_hook_voices() -> dict[str, str | None]:
 def reset_compressor_to_defaults() -> None:
     """Reset compressor settings for active voice to factory defaults."""
     config = load_config()
-    voice_name = config.get("active_voice", "default_voice")
+    voice_name = config.get("active_voice", "default")
 
     if "voices" not in config:
         config["voices"] = {}
@@ -608,7 +608,7 @@ def reset_compressor_to_defaults() -> None:
 def reset_limiter_to_defaults() -> None:
     """Reset limiter settings for active voice to factory defaults."""
     config = load_config()
-    voice_name = config.get("active_voice", "default_voice")
+    voice_name = config.get("active_voice", "default")
 
     if "voices" not in config:
         config["voices"] = {}
@@ -622,7 +622,7 @@ def reset_limiter_to_defaults() -> None:
 def reset_all_audio_to_defaults() -> None:
     """Reset all audio settings (compressor + limiter) for active voice to factory defaults."""
     config = load_config()
-    voice_name = config.get("active_voice", "default_voice")
+    voice_name = config.get("active_voice", "default")
 
     if "voices" not in config:
         config["voices"] = {}
