@@ -33,9 +33,88 @@ from textual.widgets.option_list import Option
 from textual.message import Message
 from textual.worker import Worker
 from textual import work
-from textual_autocomplete import PathAutoComplete
+from textual_autocomplete import PathAutoComplete, DropdownItem, TargetState
 from pathlib import Path
+import os
 import re
+
+
+class TildePathAutoComplete(PathAutoComplete):
+    """PathAutoComplete with support for ~ (home directory) expansion."""
+
+    def _expand_tilde(self, path_str: str) -> str:
+        """Expand ~ to home directory path."""
+        if path_str.startswith("~"):
+            return os.path.expanduser(path_str)
+        return path_str
+
+    def get_candidates(self, target_state: TargetState) -> list[DropdownItem]:
+        """Get candidates with tilde expansion support."""
+        current_input = target_state.text[: target_state.cursor_position]
+
+        # Expand ~ before processing
+        expanded_input = self._expand_tilde(current_input)
+
+        if "/" in expanded_input:
+            last_slash_index = expanded_input.rindex("/")
+            path_segment = expanded_input[:last_slash_index] or "/"
+            # Use expanded path directly (not relative to self.path)
+            if current_input.startswith("~") or current_input.startswith("/"):
+                directory = Path(path_segment) if path_segment != "/" else Path("/")
+            else:
+                directory = self.path / path_segment if path_segment != "/" else self.path
+        else:
+            # Just ~ without slash - show home directory contents
+            if current_input == "~":
+                directory = Path.home()
+            else:
+                directory = self.path
+
+        # Use the directory path as the cache key
+        cache_key = str(directory)
+        cached_entries = self._directory_cache.get(cache_key)
+
+        if cached_entries is not None:
+            entries = cached_entries
+        else:
+            try:
+                entries = list(os.scandir(directory))
+                self._directory_cache[cache_key] = entries
+            except OSError:
+                return []
+
+        results = []
+        for entry in entries:
+            completion = entry.name
+            if not self.show_dotfiles and completion.startswith("."):
+                continue
+            if entry.is_dir():
+                completion += "/"
+            results.append((completion, Path(entry.path)))
+
+        results.sort(key=lambda x: (not x[1].is_dir(), x[0].lower()))
+
+        return [
+            DropdownItem(
+                item[0],
+                prefix=self.folder_prefix if item[1].is_dir() else self.file_prefix,
+            )
+            for item in results
+        ]
+
+    def get_search_string(self, target_state: TargetState) -> str:
+        """Return only the current path segment for searching (with tilde support)."""
+        current_input = target_state.text[: target_state.cursor_position]
+
+        # Handle ~ as start of path
+        if current_input == "~":
+            return ""
+
+        if "/" in current_input:
+            last_slash_index = current_input.rindex("/")
+            return current_input[last_slash_index + 1 :]
+        else:
+            return current_input
 
 import tts_config
 from tts_config import (
@@ -1253,7 +1332,7 @@ class CloneLabWidget(Container):
                     id="wav-path-input",
                 )
                 yield wav_input
-                yield PathAutoComplete(wav_input, id="wav-path-autocomplete")
+                yield TildePathAutoComplete(wav_input, id="wav-path-autocomplete")
                 yield Label("", id="wav-validation", classes="validation-msg")
 
             with Horizontal(classes="form-row"):

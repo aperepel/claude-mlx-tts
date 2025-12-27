@@ -45,25 +45,23 @@ class TestAutocompleteAvailability:
 class TestCloneLabWidgetAutocomplete:
     """Tests for CloneLabWidget path autocomplete integration."""
 
-    def test_clone_lab_widget_has_wav_path_autocomplete_attr(self):
-        """CloneLabWidget should have WAV_PATH_AUTOCOMPLETE_ID constant."""
+    def test_clone_lab_widget_has_tilde_path_autocomplete(self):
+        """CloneLabWidget should use TildePathAutoComplete for wav-path-input."""
         from tts_tui import CloneLabWidget
 
-        # Widget should define the autocomplete target ID
-        assert hasattr(CloneLabWidget, "WAV_PATH_AUTOCOMPLETE_ID") or True
-        # Alternative: check compose method source contains PathAutoComplete
+        # Check compose method source contains TildePathAutoComplete
         import inspect
         source = inspect.getsource(CloneLabWidget.compose)
-        assert "PathAutoComplete" in source, "CloneLabWidget.compose should use PathAutoComplete"
+        assert "TildePathAutoComplete" in source, "CloneLabWidget.compose should use TildePathAutoComplete"
 
     def test_path_autocomplete_targets_wav_input(self):
-        """PathAutoComplete should target the wav-path-input."""
+        """TildePathAutoComplete should target the wav-path-input."""
         from tts_tui import CloneLabWidget
         import inspect
 
         source = inspect.getsource(CloneLabWidget.compose)
-        # PathAutoComplete should reference the wav-path-input
-        assert "PathAutoComplete" in source
+        # TildePathAutoComplete should reference the wav-path-input
+        assert "TildePathAutoComplete" in source
         assert "wav-path-input" in source
 
 
@@ -104,6 +102,77 @@ class TestAutocompleteFiltering:
 
         # PathAutoComplete handles directory navigation by default
         assert PathAutoComplete is not None
+
+
+# =============================================================================
+# Tilde Expansion Tests
+# =============================================================================
+
+
+class TestTildePathAutoComplete:
+    """Tests for TildePathAutoComplete tilde expansion."""
+
+    def test_tilde_path_autocomplete_exists(self):
+        """TildePathAutoComplete class should exist."""
+        from tts_tui import TildePathAutoComplete
+        assert TildePathAutoComplete is not None
+
+    def test_tilde_path_autocomplete_inherits_from_path_autocomplete(self):
+        """TildePathAutoComplete should inherit from PathAutoComplete."""
+        from tts_tui import TildePathAutoComplete
+        from textual_autocomplete import PathAutoComplete
+
+        assert issubclass(TildePathAutoComplete, PathAutoComplete)
+
+    def test_tilde_expansion_method_exists(self):
+        """TildePathAutoComplete should have _expand_tilde method."""
+        from tts_tui import TildePathAutoComplete
+
+        assert hasattr(TildePathAutoComplete, "_expand_tilde")
+
+    def test_tilde_expands_to_home_directory(self):
+        """_expand_tilde should expand ~ to home directory."""
+        from tts_tui import TildePathAutoComplete
+        from textual.widgets import Input
+        from pathlib import Path
+        import os
+
+        # Create instance (target doesn't matter for this test)
+        autocomplete = TildePathAutoComplete.__new__(TildePathAutoComplete)
+
+        # Test tilde expansion
+        result = autocomplete._expand_tilde("~/Documents")
+        expected = os.path.expanduser("~/Documents")
+        assert result == expected
+
+    def test_tilde_alone_expands_to_home(self):
+        """_expand_tilde should expand lone ~ to home directory."""
+        from tts_tui import TildePathAutoComplete
+        import os
+
+        autocomplete = TildePathAutoComplete.__new__(TildePathAutoComplete)
+
+        result = autocomplete._expand_tilde("~")
+        expected = os.path.expanduser("~")
+        assert result == expected
+
+    def test_non_tilde_path_unchanged(self):
+        """_expand_tilde should not modify paths without tilde."""
+        from tts_tui import TildePathAutoComplete
+
+        autocomplete = TildePathAutoComplete.__new__(TildePathAutoComplete)
+
+        result = autocomplete._expand_tilde("/usr/local/bin")
+        assert result == "/usr/local/bin"
+
+    def test_tilde_in_middle_unchanged(self):
+        """_expand_tilde should only expand tilde at start of path."""
+        from tts_tui import TildePathAutoComplete
+
+        autocomplete = TildePathAutoComplete.__new__(TildePathAutoComplete)
+
+        result = autocomplete._expand_tilde("/some/path/with~tilde")
+        assert result == "/some/path/with~tilde"
 
 
 # =============================================================================
