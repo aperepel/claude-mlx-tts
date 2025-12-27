@@ -598,7 +598,12 @@ class TestGlobalLimiterConfig:
         from tts_config import get_limiter_config, DEFAULT_LIMITER
 
         with patch("tts_config.load_config") as mock_load:
-            mock_load.return_value = {"limiter": {"threshold_db": -5.0}}
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {
+                    "my_voice": {"limiter": {"threshold_db": -5.0}}
+                }
+            }
             config = get_limiter_config()
 
         assert config["threshold_db"] == -5.0
@@ -606,17 +611,17 @@ class TestGlobalLimiterConfig:
         assert config["enabled"] == DEFAULT_LIMITER["enabled"]
 
     def test_set_limiter_setting_saves_config(self):
-        """set_limiter_setting should save the setting to config."""
+        """set_limiter_setting should save the setting to active voice config."""
         from tts_config import set_limiter_setting
 
         with patch("tts_config.load_config") as mock_load, \
              patch("tts_config.save_config") as mock_save:
-            mock_load.return_value = {}
+            mock_load.return_value = {"active_voice": "default_voice", "voices": {}}
             set_limiter_setting("threshold_db", -3.0)
 
             mock_save.assert_called_once()
             saved_config = mock_save.call_args[0][0]
-            assert saved_config["limiter"]["threshold_db"] == -3.0
+            assert saved_config["voices"]["default_voice"]["limiter"]["threshold_db"] == -3.0
 
     def test_set_limiter_setting_validates_key(self):
         """set_limiter_setting should reject invalid keys."""
@@ -631,12 +636,12 @@ class TestGlobalLimiterConfig:
 
         with patch("tts_config.load_config") as mock_load, \
              patch("tts_config.save_config") as mock_save:
-            mock_load.return_value = {}
+            mock_load.return_value = {"active_voice": "default_voice", "voices": {}}
             set_limiter_setting("enabled", False)
 
             mock_save.assert_called_once()
             saved_config = mock_save.call_args[0][0]
-            assert saved_config["limiter"]["enabled"] is False
+            assert saved_config["voices"]["default_voice"]["limiter"]["enabled"] is False
 
 
 # =============================================================================
@@ -673,12 +678,12 @@ class TestInputGainConfig:
 
         with patch("tts_config.load_config") as mock_load, \
              patch("tts_config.save_config") as mock_save:
-            mock_load.return_value = {}
+            mock_load.return_value = {"active_voice": "default_voice", "voices": {}}
             set_compressor_setting("input_gain_db", 6.0)
 
             mock_save.assert_called_once()
             saved_config = mock_save.call_args[0][0]
-            assert saved_config["compressor"]["input_gain_db"] == 6.0
+            assert saved_config["voices"]["default_voice"]["compressor"]["input_gain_db"] == 6.0
 
 
 class TestMasterGainConfig:
@@ -710,12 +715,12 @@ class TestMasterGainConfig:
 
         with patch("tts_config.load_config") as mock_load, \
              patch("tts_config.save_config") as mock_save:
-            mock_load.return_value = {}
+            mock_load.return_value = {"active_voice": "default_voice", "voices": {}}
             set_compressor_setting("master_gain_db", -3.0)
 
             mock_save.assert_called_once()
             saved_config = mock_save.call_args[0][0]
-            assert saved_config["compressor"]["master_gain_db"] == -3.0
+            assert saved_config["voices"]["default_voice"]["compressor"]["master_gain_db"] == -3.0
 
 
 class TestEffectiveGainSettings:
@@ -768,3 +773,260 @@ class TestEffectiveGainSettings:
             compressor = get_effective_compressor("quiet_voice")
 
         assert compressor["master_gain_db"] == -6.0
+
+
+# =============================================================================
+# Schema Migration Tests: Global Audio -> Per-Voice (mlx-tts-sdi)
+# =============================================================================
+
+
+class TestSchemaVersion:
+    """Tests for schema version field."""
+
+    def test_default_config_has_schema_version(self):
+        """DEFAULT_CONFIG should include schema_version field."""
+        from tts_config import DEFAULT_CONFIG
+
+        assert "schema_version" in DEFAULT_CONFIG
+
+    def test_schema_version_is_integer(self):
+        """schema_version should be an integer."""
+        from tts_config import DEFAULT_CONFIG
+
+        assert isinstance(DEFAULT_CONFIG["schema_version"], int)
+
+    def test_current_schema_version_is_one(self):
+        """Initial schema_version should be 1."""
+        from tts_config import DEFAULT_CONFIG
+
+        assert DEFAULT_CONFIG["schema_version"] == 1
+
+    def test_load_config_includes_schema_version(self):
+        """load_config should always return config with schema_version."""
+        from tts_config import load_config
+
+        with patch("tts_config.get_config_path") as mock_path:
+            mock_path.return_value = Path("/nonexistent/config.json")
+            config = load_config()
+
+        assert "schema_version" in config
+        assert config["schema_version"] == 1
+
+
+class TestDefaultConfigNoGlobalAudio:
+    """Tests that DEFAULT_CONFIG no longer has global compressor/limiter."""
+
+    def test_default_config_no_global_compressor(self):
+        """DEFAULT_CONFIG should NOT have top-level compressor key."""
+        from tts_config import DEFAULT_CONFIG
+
+        assert "compressor" not in DEFAULT_CONFIG
+
+    def test_default_config_no_global_limiter(self):
+        """DEFAULT_CONFIG should NOT have top-level limiter key."""
+        from tts_config import DEFAULT_CONFIG
+
+        assert "limiter" not in DEFAULT_CONFIG
+
+    def test_default_config_has_voices_dict(self):
+        """DEFAULT_CONFIG should include voices dict."""
+        from tts_config import DEFAULT_CONFIG
+
+        assert "voices" in DEFAULT_CONFIG
+        assert isinstance(DEFAULT_CONFIG["voices"], dict)
+
+
+class TestGlobalGettersUseActiveVoice:
+    """Tests that global getters now operate on active voice."""
+
+    def test_get_compressor_config_uses_active_voice(self):
+        """get_compressor_config should read from active voice's settings."""
+        from tts_config import get_compressor_config
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {
+                    "my_voice": {"compressor": {"gain_db": 15}}
+                }
+            }
+            config = get_compressor_config()
+
+        assert config["gain_db"] == 15
+
+    def test_get_limiter_config_uses_active_voice(self):
+        """get_limiter_config should read from active voice's settings."""
+        from tts_config import get_limiter_config
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {
+                    "my_voice": {"limiter": {"threshold_db": -2.0}}
+                }
+            }
+            config = get_limiter_config()
+
+        assert config["threshold_db"] == -2.0
+
+    def test_get_compressor_config_falls_back_to_defaults(self):
+        """get_compressor_config should use defaults when voice has no settings."""
+        from tts_config import get_compressor_config, DEFAULT_COMPRESSOR
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "active_voice": "default_voice",
+                "voices": {}
+            }
+            config = get_compressor_config()
+
+        assert config == DEFAULT_COMPRESSOR
+
+    def test_get_limiter_config_falls_back_to_defaults(self):
+        """get_limiter_config should use defaults when voice has no settings."""
+        from tts_config import get_limiter_config, DEFAULT_LIMITER
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "active_voice": "default_voice",
+                "voices": {}
+            }
+            config = get_limiter_config()
+
+        assert config == DEFAULT_LIMITER
+
+
+class TestGlobalSettersUseActiveVoice:
+    """Tests that global setters now operate on active voice."""
+
+    def test_set_compressor_setting_writes_to_active_voice(self):
+        """set_compressor_setting should write to active voice's settings."""
+        from tts_config import set_compressor_setting
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {}
+            }
+            set_compressor_setting("gain_db", 12.0)
+
+            mock_save.assert_called_once()
+            saved = mock_save.call_args[0][0]
+            assert saved["voices"]["my_voice"]["compressor"]["gain_db"] == 12.0
+            # Should NOT have global compressor
+            assert "compressor" not in saved or saved.get("compressor") is None
+
+    def test_set_limiter_setting_writes_to_active_voice(self):
+        """set_limiter_setting should write to active voice's settings."""
+        from tts_config import set_limiter_setting
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {}
+            }
+            set_limiter_setting("threshold_db", -3.0)
+
+            mock_save.assert_called_once()
+            saved = mock_save.call_args[0][0]
+            assert saved["voices"]["my_voice"]["limiter"]["threshold_db"] == -3.0
+            # Should NOT have global limiter
+            assert "limiter" not in saved or saved.get("limiter") is None
+
+    def test_set_compressor_setting_preserves_existing_voice_settings(self):
+        """set_compressor_setting should preserve other voice settings."""
+        from tts_config import set_compressor_setting
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {
+                    "my_voice": {
+                        "compressor": {"enabled": True, "gain_db": 5},
+                        "limiter": {"threshold_db": -1.0}
+                    }
+                }
+            }
+            set_compressor_setting("gain_db", 10.0)
+
+            saved = mock_save.call_args[0][0]
+            # Should update gain_db
+            assert saved["voices"]["my_voice"]["compressor"]["gain_db"] == 10.0
+            # Should preserve enabled
+            assert saved["voices"]["my_voice"]["compressor"]["enabled"] is True
+            # Should preserve limiter
+            assert saved["voices"]["my_voice"]["limiter"]["threshold_db"] == -1.0
+
+
+class TestResetFunctionsUseActiveVoice:
+    """Tests that reset functions operate on active voice."""
+
+    def test_reset_compressor_to_defaults_clears_active_voice_compressor(self):
+        """reset_compressor_to_defaults should reset active voice's compressor."""
+        from tts_config import reset_compressor_to_defaults, DEFAULT_COMPRESSOR
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {
+                    "my_voice": {
+                        "compressor": {"gain_db": 20, "enabled": False},
+                        "limiter": {"threshold_db": -2.0}
+                    }
+                }
+            }
+            reset_compressor_to_defaults()
+
+            saved = mock_save.call_args[0][0]
+            # Compressor should be reset to defaults
+            assert saved["voices"]["my_voice"]["compressor"] == DEFAULT_COMPRESSOR
+            # Limiter should be preserved
+            assert saved["voices"]["my_voice"]["limiter"]["threshold_db"] == -2.0
+
+    def test_reset_limiter_to_defaults_clears_active_voice_limiter(self):
+        """reset_limiter_to_defaults should reset active voice's limiter."""
+        from tts_config import reset_limiter_to_defaults, DEFAULT_LIMITER
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {
+                    "my_voice": {
+                        "compressor": {"gain_db": 15},
+                        "limiter": {"threshold_db": -5.0, "enabled": False}
+                    }
+                }
+            }
+            reset_limiter_to_defaults()
+
+            saved = mock_save.call_args[0][0]
+            # Limiter should be reset to defaults
+            assert saved["voices"]["my_voice"]["limiter"] == DEFAULT_LIMITER
+            # Compressor should be preserved
+            assert saved["voices"]["my_voice"]["compressor"]["gain_db"] == 15
+
+    def test_reset_all_audio_to_defaults_clears_both(self):
+        """reset_all_audio_to_defaults should reset both compressor and limiter."""
+        from tts_config import reset_all_audio_to_defaults, DEFAULT_COMPRESSOR, DEFAULT_LIMITER
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "active_voice": "my_voice",
+                "voices": {
+                    "my_voice": {
+                        "compressor": {"gain_db": 20},
+                        "limiter": {"threshold_db": -5.0}
+                    }
+                }
+            }
+            reset_all_audio_to_defaults()
+
+            saved = mock_save.call_args[0][0]
+            assert saved["voices"]["my_voice"]["compressor"] == DEFAULT_COMPRESSOR
+            assert saved["voices"]["my_voice"]["limiter"] == DEFAULT_LIMITER
