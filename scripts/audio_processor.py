@@ -44,8 +44,17 @@ def get_compressor_config() -> dict:
     Returns dict with all compressor/limiter parameters.
     """
     try:
-        from tts_config import get_compressor_config as _get_config
-        return _get_config()
+        from tts_config import get_compressor_config as _get_compressor
+        from tts_config import get_limiter_config as _get_limiter
+        compressor = _get_compressor()
+        limiter = _get_limiter()
+        # Merge configs, mapping limiter keys to expected names
+        return {
+            **compressor,
+            "limiter_threshold_db": limiter.get("threshold_db", DEFAULT_LIMITER_THRESHOLD_DB),
+            "limiter_release_ms": limiter.get("release_ms", DEFAULT_LIMITER_RELEASE_MS),
+            "limiter_enabled": limiter.get("enabled", True),
+        }
     except ImportError:
         # Fallback to hardcoded defaults if tts_config unavailable
         return {

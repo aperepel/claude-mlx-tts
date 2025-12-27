@@ -416,6 +416,98 @@ def get_effective_limiter(voice_name: str = None) -> dict:
     return {**DEFAULT_LIMITER, **voice_limiter}
 
 
+# =============================================================================
+# Per-Hook Voice Configuration
+# =============================================================================
+
+# Available hook types that can have voice overrides
+HOOK_TYPES = ["stop", "permission_request"]
+
+
+def get_hook_voice(hook_type: str) -> str | None:
+    """Get the voice override for a specific hook type.
+
+    Returns None if no override is set (uses default voice).
+    """
+    if hook_type not in HOOK_TYPES:
+        raise ValueError(f"Invalid hook type: {hook_type}. Valid: {HOOK_TYPES}")
+
+    config = load_config()
+    hooks = config.get("hooks", {})
+    return hooks.get(hook_type, {}).get("voice")
+
+
+def set_hook_voice(hook_type: str, voice_name: str | None) -> None:
+    """Set the voice override for a specific hook type.
+
+    Set voice_name to None to clear the override (use default voice).
+    """
+    if hook_type not in HOOK_TYPES:
+        raise ValueError(f"Invalid hook type: {hook_type}. Valid: {HOOK_TYPES}")
+
+    if voice_name is not None:
+        available_voices = discover_voices()
+        if voice_name not in available_voices:
+            raise ValueError(f"Voice '{voice_name}' not found. Available: {available_voices}")
+
+    config = load_config()
+    if "hooks" not in config:
+        config["hooks"] = {}
+    if hook_type not in config["hooks"]:
+        config["hooks"][hook_type] = {}
+
+    if voice_name is None:
+        # Clear the override
+        config["hooks"][hook_type].pop("voice", None)
+        # Clean up empty dicts
+        if not config["hooks"][hook_type]:
+            del config["hooks"][hook_type]
+        if not config["hooks"]:
+            del config["hooks"]
+    else:
+        config["hooks"][hook_type]["voice"] = voice_name
+
+    save_config(config)
+
+
+def get_effective_hook_voice(hook_type: str) -> str:
+    """Get the effective voice for a hook (override or default)."""
+    override = get_hook_voice(hook_type)
+    return override if override else get_active_voice()
+
+
+def get_all_hook_voices() -> dict[str, str | None]:
+    """Get all hook voice overrides."""
+    return {hook: get_hook_voice(hook) for hook in HOOK_TYPES}
+
+
+# =============================================================================
+# Reset to Defaults
+# =============================================================================
+
+
+def reset_compressor_to_defaults() -> None:
+    """Reset compressor settings to factory defaults."""
+    config = load_config()
+    config["compressor"] = DEFAULT_COMPRESSOR.copy()
+    save_config(config)
+
+
+def reset_limiter_to_defaults() -> None:
+    """Reset limiter settings to factory defaults."""
+    config = load_config()
+    config["limiter"] = DEFAULT_LIMITER.copy()
+    save_config(config)
+
+
+def reset_all_audio_to_defaults() -> None:
+    """Reset all audio settings (compressor + limiter) to factory defaults."""
+    config = load_config()
+    config["compressor"] = DEFAULT_COMPRESSOR.copy()
+    config["limiter"] = DEFAULT_LIMITER.copy()
+    save_config(config)
+
+
 def format_current_config() -> str:
     """Format the current configuration for display."""
     config = load_config()

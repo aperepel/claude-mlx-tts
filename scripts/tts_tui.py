@@ -36,17 +36,21 @@ import tts_config
 from tts_config import (
     DEFAULT_COMPRESSOR,
     DEFAULT_LIMITER,
+    HOOK_TYPES,
     SPEED_PRESETS,
     discover_voices,
     get_active_voice,
     get_compressor_config,
     get_effective_compressor,
     get_effective_limiter,
+    get_hook_voice,
     get_limiter_config,
     get_playback_speed,
     get_streaming_interval,
+    reset_all_audio_to_defaults,
     set_active_voice,
     set_compressor_setting,
+    set_hook_voice,
     set_limiter_setting,
     set_playback_speed,
     set_streaming_interval,
@@ -150,7 +154,7 @@ class VoiceSelector(Container):
 
     DEFAULT_CSS = """
     VoiceSelector {
-        height: 19;
+        height: 22;
         width: 32;
         padding: 1;
         border: round $primary;
@@ -384,6 +388,18 @@ class CompressorWidget(Container):
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
+    def _refresh_fields(self) -> None:
+        """Refresh all field values from config."""
+        config = get_compressor_config()
+        self.query_one("#compressor-enabled", Switch).value = config.get("enabled", True)
+        self.query_one("#input-gain-field", FormField).value = config.get("input_gain_db", 0.0)
+        self.query_one("#threshold-field", FormField).value = config.get("threshold_db", -18)
+        self.query_one("#ratio-field", FormField).value = config.get("ratio", 3.0)
+        self.query_one("#attack-field", FormField).value = config.get("attack_ms", 3)
+        self.query_one("#release-field", FormField).value = config.get("release_ms", 50)
+        self.query_one("#gain-field", FormField).value = config.get("gain_db", 8)
+        self.query_one("#preset-select", Select).value = "custom"
+
     def on_switch_changed(self, event: Switch.Changed) -> None:
         """Handle compressor enable toggle."""
         if event.switch.id == "compressor-enabled":
@@ -495,6 +511,16 @@ class LimiterWidget(Container):
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
+    def _refresh_fields(self) -> None:
+        """Refresh all field values from config."""
+        config = get_limiter_config()
+        compressor_config = get_compressor_config()
+        self.query_one("#limiter-enabled", Switch).value = config.get("enabled", True)
+        self.query_one("#limiter-threshold-field", FormField).value = config.get("threshold_db", -0.5)
+        self.query_one("#limiter-release-field", FormField).value = config.get("release_ms", 40)
+        self.query_one("#master-gain-field", FormField).value = compressor_config.get("master_gain_db", 0.0)
+        self.query_one("#limiter-preset-select", Select).value = "custom"
+
     def on_switch_changed(self, event: Switch.Changed) -> None:
         """Handle limiter enable toggle."""
         if event.switch.id == "limiter-enabled":
@@ -523,6 +549,74 @@ class LimiterWidget(Container):
         self.query_one("#limiter-release-field", FormField).value = preset["release_ms"]
 
 
+# Human-readable hook type labels
+HOOK_LABELS = {
+    "stop": "Stop (completion)",
+    "permission_request": "Permission Request",
+}
+
+
+class HookVoiceSelector(Container):
+    """Widget for selecting voice override for a specific hook type."""
+
+    DEFAULT_CSS = """
+    HookVoiceSelector {
+        height: auto;
+        width: 100%;
+        padding: 1 2;
+        margin: 0 0 1 0;
+    }
+    HookVoiceSelector > .hook-row {
+        height: 3;
+        width: 100%;
+    }
+    HookVoiceSelector > .hook-row > .hook-label {
+        width: 24;
+        padding: 1 1 1 0;
+    }
+    HookVoiceSelector > .hook-row > Select {
+        width: 30;
+    }
+    HookVoiceSelector > .hook-description {
+        color: $text-muted;
+        padding: 0 0 0 2;
+        height: auto;
+    }
+    """
+
+    def __init__(self, hook_type: str, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._hook_type = hook_type
+
+    def compose(self) -> ComposeResult:
+        voices = discover_voices()
+        current_voice = get_hook_voice(self._hook_type)
+
+        # Build options: "Default" + all voices
+        options = [("Use default voice", "__default__")]
+        options.extend((voice, voice) for voice in voices)
+
+        # Determine current value
+        current_value = current_voice if current_voice else "__default__"
+
+        with Horizontal(classes="hook-row"):
+            yield Label(HOOK_LABELS.get(self._hook_type, self._hook_type), classes="hook-label")
+            yield Select(
+                options,
+                value=current_value,
+                id=f"hook-voice-{self._hook_type}",
+            )
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle voice selection change."""
+        if event.select.id == f"hook-voice-{self._hook_type}":
+            voice = None if event.value == "__default__" else event.value
+            try:
+                set_hook_voice(self._hook_type, voice)
+            except ValueError as e:
+                self.notify(str(e), severity="error")
+
+
 # Default preview phrases
 PREVIEW_PHRASES = [
     "The quick brown fox jumps over the lazy dog.",
@@ -548,14 +642,9 @@ class PreviewWidget(Container):
         width: 100%;
         align: center middle;
     }
-    PreviewWidget > .header-row > Label {
-        width: auto;
-        text-style: bold;
-        padding: 1 1;
-    }
     PreviewWidget > .header-row > Button {
         width: auto;
-        margin-left: 2;
+        margin: 0 1;
     }
     PreviewWidget > .phrase-display {
         height: auto;
@@ -588,8 +677,8 @@ class PreviewWidget(Container):
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="header-row"):
-            yield Label("Preview")
             yield Button("Play", id="play-preview-btn", variant="primary")
+            yield Button("Reset", id="reset-audio-btn", variant="warning")
 
         yield Static(f'"{self._preview_phrase}"', id="phrase-display", classes="phrase-display")
 
@@ -620,10 +709,17 @@ class PreviewWidget(Container):
         status = self.query_one("#status-text", Static)
         status.update(message)
 
+    class AudioReset(Message):
+        """Posted when audio settings are reset."""
+        pass
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle play button press."""
+        """Handle button presses."""
         if event.button.id == "play-preview-btn":
             self._play_preview()
+        elif event.button.id == "reset-audio-btn":
+            reset_all_audio_to_defaults()
+            self.post_message(self.AudioReset())
 
     def _play_preview(self) -> None:
         """Play the preview phrase using TTS."""
@@ -779,14 +875,11 @@ class SystemScreen(Screen):
         if event.select.id == "speed-select" and event.value is not None:
             try:
                 set_playback_speed(event.value)
-                label = SPEED_PRESETS.get(event.value, "Custom")
-                self.notify(f"Speed set to {event.value}x ({label})")
             except ValueError as e:
                 self.notify(str(e), severity="error")
         elif event.select.id == "interval-select" and event.value is not None:
             try:
                 set_streaming_interval(event.value)
-                self.notify(f"Streaming interval set to {event.value}s")
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
@@ -859,8 +952,9 @@ class MainScreen(Screen):
 
     BINDINGS = [
         Binding("1", "switch_tab('voice-lab')", "Voice Lab", show=True),
-        Binding("2", "switch_tab('system')", "System", show=True),
-        Binding("3", "switch_tab('about')", "About", show=True),
+        Binding("2", "switch_tab('hooks')", "Hooks", show=True),
+        Binding("3", "switch_tab('system')", "System", show=True),
+        Binding("4", "switch_tab('about')", "About", show=True),
     ]
 
     def compose(self) -> ComposeResult:
@@ -873,6 +967,16 @@ class MainScreen(Screen):
                         yield CompressorWidget(id="compressor-widget")
                         yield LimiterWidget(id="limiter-widget")
                 yield PreviewWidget(id="preview-widget")
+            with TabPane("Hooks", id="hooks"):
+                yield Label("Per-Hook Voice Settings", classes="section-title")
+                yield Static(
+                    "Override the default voice for specific hooks. "
+                    "When set, these hooks will use the specified voice instead of the default.",
+                    classes="info",
+                )
+                yield Static("")
+                for hook_type in HOOK_TYPES:
+                    yield HookVoiceSelector(hook_type, id=f"hook-selector-{hook_type}")
             with TabPane("System", id="system"):
                 yield Label("Server Status", classes="section-title")
                 yield ServerStatusWidget(id="server-status")
@@ -905,7 +1009,7 @@ class MainScreen(Screen):
                 yield Label("Claude MLX TTS", classes="title")
                 yield Static(
                     "Voice-cloned TTS notifications for Claude Code using MLX.\n\n"
-                    "Use keyboard shortcuts 1/2/3 to navigate tabs."
+                    "Use keyboard shortcuts 1/2/3/4 to navigate tabs."
                 )
                 yield Static("")
                 yield Static(f"Config: {tts_config.get_config_path()}")
@@ -921,16 +1025,18 @@ class MainScreen(Screen):
         if event.select.id == "speed-select" and event.value is not None:
             try:
                 set_playback_speed(event.value)
-                label = SPEED_PRESETS.get(event.value, "Custom")
-                self.notify(f"Speed set to {event.value}x ({label})")
             except ValueError as e:
                 self.notify(str(e), severity="error")
         elif event.select.id == "interval-select" and event.value is not None:
             try:
                 set_streaming_interval(event.value)
-                self.notify(f"Streaming interval set to {event.value}s")
             except ValueError as e:
                 self.notify(str(e), severity="error")
+
+    def on_preview_widget_audio_reset(self, event: PreviewWidget.AudioReset) -> None:
+        """Handle audio reset - refresh compressor and limiter widgets."""
+        self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
+        self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
 
 
 class TTSConfigApp(App):
