@@ -376,8 +376,8 @@ if __name__ == "__main__":
 
     text = " ".join(sys.argv[1:])
 
-    if is_server_alive():
-        speak_mlx_http(text)
-    else:
-        from mlx_tts_core import speak_mlx
-        speak_mlx(text)
+    # Always use speak_mlx for CLI - it correctly reads active voice from config.
+    # The HTTP server path (speak_mlx_http) is for hooks where we leverage
+    # the pre-warmed server, but it doesn't dynamically switch voices.
+    from mlx_tts_core import speak_mlx
+    speak_mlx(text)
