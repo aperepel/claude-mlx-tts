@@ -151,6 +151,13 @@ class ServerStatusWidget(Static):
 class VoiceSelector(Container):
     """Voice selection widget with vertical list."""
 
+    class VoiceChanged(Message):
+        """Posted when a voice is selected."""
+
+        def __init__(self, voice_name: str) -> None:
+            self.voice_name = voice_name
+            super().__init__()
+
     DEFAULT_CSS = """
     VoiceSelector {
         height: 22;
@@ -190,6 +197,7 @@ class VoiceSelector(Container):
         voice_name = str(event.option.id)
         try:
             set_active_voice(voice_name)
+            self.post_message(self.VoiceChanged(voice_name))
         except ValueError as e:
             self.notify(str(e), severity="error")
 
@@ -1033,6 +1041,11 @@ class MainScreen(Screen):
 
     def on_preview_widget_audio_reset(self, event: PreviewWidget.AudioReset) -> None:
         """Handle audio reset - refresh compressor and limiter widgets."""
+        self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
+        self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
+
+    def on_voice_selector_voice_changed(self, event: VoiceSelector.VoiceChanged) -> None:
+        """Handle voice change - refresh compressor and limiter widgets with new voice's settings."""
         self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
         self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
 
