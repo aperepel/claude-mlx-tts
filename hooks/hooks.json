@@ -64,6 +64,11 @@
       "description": "Summarize long text and speak the summary",
       "instruction": "Summarize the provided text and speak it",
       "command": "${CLAUDE_PLUGIN_ROOT}/scripts/summary-say.sh"
+    },
+    "tts-config": {
+      "description": "Configure TTS settings (playback speed)",
+      "instruction": "Run the wizard command to see current settings and available options, then use AskUserQuestion to let the user select a playback speed (1.0x Slow, 1.3x Normal, 1.6x Fast, 2.0x Turbo). After selection, run set command with the chosen speed.",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-config.sh"
     }
   }
 }
