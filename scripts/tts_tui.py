@@ -939,9 +939,6 @@ class AboutScreen(Screen):
             Static("2 - System Settings (speed, streaming)", classes="info"),
             Static("3 - About (this screen)", classes="info"),
             Static("q - Quit", classes="info"),
-            Static(""),
-            Label("Configuration", classes="title"),
-            Static(f"Config path: {tts_config.get_config_path()}", classes="info"),
         )
         yield Footer()
 
@@ -1016,14 +1013,14 @@ class MainScreen(Screen):
                     ),
                     classes="setting-row",
                 )
+                yield Static("")
+                yield Static(f"Config: {tts_config.get_config_path()}", classes="info")
             with TabPane("About", id="about"):
                 yield Label("Claude MLX TTS", classes="title")
                 yield Static(
                     "Voice-cloned TTS notifications for Claude Code using MLX.\n\n"
                     "Use keyboard shortcuts 1/2/3/4 to navigate tabs."
                 )
-                yield Static("")
-                yield Static(f"Config: {tts_config.get_config_path()}")
         yield Footer()
 
     def action_switch_tab(self, tab_id: str) -> None:
