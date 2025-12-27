@@ -82,7 +82,8 @@ def create_processor(
     limiter_release_ms: float | None = None,
     gain_db: float | None = None,
     master_gain_db: float | None = None,
-    enabled: bool = True,
+    compressor_enabled: bool | None = None,
+    limiter_enabled: bool | None = None,
 ) -> Callable[[np.ndarray], np.ndarray]:
     """
     Create a stateful audio processor for streaming chunk processing.
@@ -103,7 +104,8 @@ def create_processor(
         limiter_release_ms: Limiter release time in ms (default 40).
         gain_db: Makeup gain in dB (default 8).
         master_gain_db: Master gain in dB after limiter (default 0).
-        enabled: Whether processing is enabled (default True).
+        compressor_enabled: Whether compressor is enabled (reads from config if None).
+        limiter_enabled: Whether limiter is enabled (reads from config if None).
 
     Returns:
         Callable that processes audio chunks while maintaining state.
@@ -122,26 +124,37 @@ def create_processor(
     gain_db = gain_db if gain_db is not None else config["gain_db"]
     master_gain_db = master_gain_db if master_gain_db is not None else config.get("master_gain_db", DEFAULT_MASTER_GAIN_DB)
 
-    # Build processing chain: Input Gain → Compressor → Makeup Gain → Limiter → Master Gain
-    board = Pedalboard([
-        Gain(gain_db=input_gain_db),
-        Compressor(
+    # Read enabled flags from config if not explicitly provided
+    comp_enabled = compressor_enabled if compressor_enabled is not None else config.get("enabled", DEFAULT_ENABLED)
+    lim_enabled = limiter_enabled if limiter_enabled is not None else config.get("limiter_enabled", True)
+
+    # Build processing chain based on what's enabled
+    # Signal chain: Input Gain → [Compressor → Makeup Gain] → [Limiter] → Master Gain
+    chain = [Gain(gain_db=input_gain_db)]
+
+    if comp_enabled:
+        chain.append(Compressor(
             threshold_db=threshold_db,
             ratio=ratio,
             attack_ms=attack_ms,
             release_ms=release_ms,
-        ),
-        Gain(gain_db=gain_db),
-        Limiter(
+        ))
+        chain.append(Gain(gain_db=gain_db))
+
+    if lim_enabled:
+        chain.append(Limiter(
             threshold_db=limiter_threshold_db,
             release_ms=limiter_release_ms,
-        ),
-        Gain(gain_db=master_gain_db),
-    ])
+        ))
+
+    chain.append(Gain(gain_db=master_gain_db))
+
+    board = Pedalboard(chain)
 
     def processor(audio: np.ndarray) -> np.ndarray:
         """Process an audio chunk, maintaining state across calls."""
-        if not enabled:
+        # Skip processing entirely if both are disabled
+        if not comp_enabled and not lim_enabled:
             return audio
 
         if len(audio) == 0:
@@ -184,7 +197,8 @@ def process_chunk(
     limiter_release_ms: float | None = None,
     gain_db: float | None = None,
     master_gain_db: float | None = None,
-    enabled: bool = True,
+    compressor_enabled: bool | None = None,
+    limiter_enabled: bool | None = None,
 ) -> np.ndarray:
     """
     Process a single audio chunk (stateless).
@@ -206,14 +220,12 @@ def process_chunk(
         limiter_release_ms: Limiter release time in ms (default 40).
         gain_db: Makeup gain in dB (default 8).
         master_gain_db: Master gain in dB after limiter (default 0).
-        enabled: Whether processing is enabled (default True).
+        compressor_enabled: Whether compressor is enabled (reads from config if None).
+        limiter_enabled: Whether limiter is enabled (reads from config if None).
 
     Returns:
         Processed audio as numpy float32 array.
     """
-    if not enabled:
-        return audio
-
     if len(audio) == 0:
         return audio
 
@@ -229,7 +241,8 @@ def process_chunk(
         limiter_release_ms=limiter_release_ms,
         gain_db=gain_db,
         master_gain_db=master_gain_db,
-        enabled=True,  # Already checked above
+        compressor_enabled=compressor_enabled,
+        limiter_enabled=limiter_enabled,
     )
 
     return processor(audio)

@@ -727,39 +727,53 @@ class PreviewWidget(Container):
             return
 
         self.is_playing = True
-        self.status_message = "Starting TTS..."
 
-        # Run TTS in a worker thread to avoid blocking UI
-        self.run_worker(self._do_tts_playback, exclusive=True)
+        # Spawn a thread to manage the subprocess (so we don't block the UI)
+        import threading
+        thread = threading.Thread(target=self._do_tts_subprocess, daemon=True)
+        thread.start()
 
-    async def _do_tts_playback(self) -> None:
-        """Worker method to perform TTS playback."""
-        try:
-            self.status_message = "Generating audio..."
+    def _do_tts_subprocess(self) -> None:
+        """Play TTS in a separate process.
 
-            # Try HTTP server first (faster, uses cached voice)
-            try:
-                from mlx_server_utils import speak_mlx_http, is_server_alive
-                if is_server_alive():
-                    self.status_message = "Playing via server..."
-                    speak_mlx_http(self._preview_phrase)
-                else:
-                    # Fall back to direct MLX invocation
-                    self.status_message = "Server not running, using direct MLX..."
-                    from mlx_tts_core import speak_mlx
-                    speak_mlx(self._preview_phrase)
-            except ImportError:
-                # Fall back to direct MLX if server utils unavailable
-                self.status_message = "Using direct MLX..."
-                from mlx_tts_core import speak_mlx
-                speak_mlx(self._preview_phrase)
+        Why subprocess instead of threading?
+        ------------------------------------
+        Textual's event loop and Python's GIL cause audio buffer underruns
+        when TTS runs in-process. The event loop's frequent repaints compete
+        for CPU time with audio playback, causing crackles/pops. Running TTS
+        in a subprocess completely isolates it from the TUI process.
+        """
+        import subprocess
+        import sys
+        import os
 
-            self.status_message = "Playback complete"
-        except Exception as e:
-            self.status_message = f"Error: {str(e)[:40]}"
-            self.notify(f"TTS Error: {e}", severity="error")
-        finally:
+        def finish(status: str, error: str | None = None) -> None:
+            self.status_message = status
             self.is_playing = False
+            if error:
+                self.notify(error, severity="error")
+
+        try:
+            scripts_dir = os.path.dirname(os.path.abspath(__file__))
+            tts_script = os.path.join(scripts_dir, "mlx_server_utils.py")
+
+            result = subprocess.run(
+                [sys.executable, tts_script, self._preview_phrase],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode == 0:
+                self.app.call_from_thread(finish, "Done")
+            else:
+                error_msg = result.stderr[:100] if result.stderr else "Unknown error"
+                self.app.call_from_thread(finish, "Error", f"TTS failed: {error_msg}")
+
+        except subprocess.TimeoutExpired:
+            self.app.call_from_thread(finish, "Timeout", "TTS timed out after 60s")
+        except Exception as e:
+            self.app.call_from_thread(finish, f"Error: {str(e)[:40]}", f"TTS Error: {e}")
 
     @property
     def preview_phrase(self) -> str:

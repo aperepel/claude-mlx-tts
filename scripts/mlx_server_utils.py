@@ -373,3 +373,23 @@ def get_server_status(port: int = TTS_SERVER_PORT) -> dict[str, Any]:
         "host": TTS_SERVER_HOST,
         "model": MLX_MODEL,
     }
+
+
+# =============================================================================
+# CLI Entry Point
+# =============================================================================
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) < 2:
+        print("Usage: python mlx_server_utils.py <text>", file=sys.stderr)
+        sys.exit(1)
+
+    text = " ".join(sys.argv[1:])
+
+    if is_server_alive():
+        speak_mlx_http(text)
+    else:
+        from mlx_tts_core import speak_mlx
+        speak_mlx(text)
