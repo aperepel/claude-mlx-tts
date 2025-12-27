@@ -186,12 +186,22 @@ def extract_tool_name(message: str) -> str:
 
 
 def is_mlx_available() -> bool:
-    """Check if MLX audio is installed and voice reference exists."""
+    """Check if MLX audio is installed and at least one voice exists."""
     try:
         import mlx_audio  # noqa: F401
-        voice_ref = os.path.join(os.path.dirname(SCRIPT_DIR), "assets", "default_voice.wav")
-        return os.path.exists(voice_ref)
     except ImportError:
+        log.debug("MLX not available: mlx_audio not installed")
+        return False
+
+    try:
+        from tts_config import discover_voices
+        voices = discover_voices()
+        if not voices:
+            log.debug("MLX not available: no voices found in assets/")
+            return False
+        return True
+    except ImportError:
+        log.debug("MLX not available: tts_config not importable")
         return False
 
 
@@ -231,7 +241,7 @@ def speak_notification(tool_name: str):
         log.info(f"TTS [{voice}]: {message}")
         speak_mlx(message, voice=voice)
     else:
-        log.info(f"TTS [Daniel]: {message}")
+        log.info(f"TTS [Daniel] (MLX unavailable): {message}")
         speak_say(message)
 
 
