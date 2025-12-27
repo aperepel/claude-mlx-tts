@@ -33,6 +33,7 @@ from textual.widgets.option_list import Option
 from textual.message import Message
 from textual.worker import Worker
 from textual import work
+from textual_autocomplete import PathAutoComplete
 from pathlib import Path
 import re
 
@@ -1247,10 +1248,12 @@ class CloneLabWidget(Container):
         with Vertical(classes="clone-form"):
             with Horizontal(classes="form-row"):
                 yield Label("Source WAV:", classes="field-label")
-                yield Input(
+                wav_input = Input(
                     placeholder="/path/to/voice.wav",
                     id="wav-path-input",
                 )
+                yield wav_input
+                yield PathAutoComplete(wav_input, id="wav-path-autocomplete")
                 yield Label("", id="wav-validation", classes="validation-msg")
 
             with Horizontal(classes="form-row"):

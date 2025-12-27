@@ -308,6 +308,7 @@ mlx = [
     { name = "setuptools" },
     { name = "sounddevice" },
     { name = "textual" },
+    { name = "textual-autocomplete" },
     { name = "uvicorn" },
     { name = "webrtcvad" },
 ]
@@ -331,6 +332,7 @@ requires-dist = [
     { name = "setuptools", marker = "extra == 'mlx'" },
     { name = "sounddevice", marker = "extra == 'mlx'", specifier = ">=0.5" },
     { name = "textual", marker = "extra == 'mlx'", specifier = ">=6.11" },
+    { name = "textual-autocomplete", marker = "extra == 'mlx'", specifier = ">=4.0.6" },
     { name = "uvicorn", marker = "extra == 'mlx'", specifier = ">=0.30" },
     { name = "webrtcvad", marker = "extra == 'mlx'", specifier = ">=2.0.10" },
 ]
@@ -2012,6 +2014,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/55/06/906f86bbc59ec7cd3fb424250e19ce670406d1f28e49e86c2221e9fd7ed2/textual-6.11.0.tar.gz", hash = "sha256:08237ebda0cfbbfd1a4e2fd3039882b35894a73994f6f0fcc12c5b0d78acf3cc", size = 1584292 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b5/fc/5e2988590ff2e0128eea6446806c904445a44e17256c67141573ea16b5a5/textual-6.11.0-py3-none-any.whl", hash = "sha256:9e663b73ed37123a9b13c16a0c85e09ef917a4cfded97814361ed5cccfa40f89", size = 714886 },
+]
+
+[[package]]
+name = "textual-autocomplete"
+version = "4.0.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "textual" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1e/3a/80411bc7b94969eb116ad1b18db90f8dce8a1de441278c4a81fee55a27ca/textual_autocomplete-4.0.6.tar.gz", hash = "sha256:2ba2f0d767be4480ecacb3e4b130cf07340e033c3500fc424fed9125d27a4586", size = 97967 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/66/ebe744d79c87f25a42d2654dddbd09462edd595f2ded715245a51a546461/textual_autocomplete-4.0.6-py3-none-any.whl", hash = "sha256:bff69c19386e2cbb4a007503b058dc37671d480a4fa2ddb3959c15ceb4aff9b5", size = 16499 },
 ]
 
 [[package]]

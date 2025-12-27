@@ -27,6 +27,7 @@ mlx = [
     "webrtcvad>=2.0.10", # Required for mlx_audio.server
     "setuptools",        # Required by webrtcvad (pkg_resources)
     "textual>=6.11",     # Required for TTS configuration TUI
+    "textual-autocomplete>=4.0.6",  # Clone Lab path autocomplete
 ]
 # Development dependencies
 dev = [
