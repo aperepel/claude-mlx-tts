@@ -283,6 +283,60 @@ class TestSpeakMlxHttp:
                 with pytest.raises(TTSRequestError):
                     speak_mlx_http("Test")
 
+    def test_passes_voice_in_payload_when_specified(self):
+        """speak_mlx_http should pass voice parameter directly in request payload."""
+        from mlx_server_utils import speak_mlx_http
+
+        with patch("mlx_server_utils.ensure_server_running"):
+            with patch("mlx_server_utils.requests.post") as mock_post:
+                mock_response = MagicMock()
+                mock_response.status_code = 200
+                mock_response.content = b""  # Empty audio data to skip playback
+                mock_post.return_value = mock_response
+
+                speak_mlx_http("Test message", voice="custom_voice")
+
+                mock_post.assert_called_once()
+                call_kwargs = mock_post.call_args[1]
+                payload = call_kwargs["json"]
+                assert payload["voice"] == "custom_voice"
+
+    def test_omits_voice_from_payload_when_not_specified(self):
+        """speak_mlx_http should not include voice in payload when None."""
+        from mlx_server_utils import speak_mlx_http
+
+        with patch("mlx_server_utils.ensure_server_running"):
+            with patch("mlx_server_utils.requests.post") as mock_post:
+                mock_response = MagicMock()
+                mock_response.status_code = 200
+                mock_response.content = b""  # Empty audio data to skip playback
+                mock_post.return_value = mock_response
+
+                speak_mlx_http("Test message")
+
+                mock_post.assert_called_once()
+                call_kwargs = mock_post.call_args[1]
+                payload = call_kwargs["json"]
+                assert "voice" not in payload
+
+    def test_does_not_modify_config_when_voice_specified(self):
+        """speak_mlx_http should NOT modify active_voice in config (prevents race conditions)."""
+        from mlx_server_utils import speak_mlx_http
+
+        with patch("mlx_server_utils.ensure_server_running"):
+            with patch("mlx_server_utils.requests.post") as mock_post:
+                mock_response = MagicMock()
+                mock_response.status_code = 200
+                mock_response.content = b""
+                mock_post.return_value = mock_response
+
+                # Patch set_active_voice to verify it's NOT called
+                with patch("tts_config.set_active_voice") as mock_set_voice:
+                    speak_mlx_http("Test", voice="different_voice")
+
+                    # set_active_voice should NOT be called - we pass voice in payload instead
+                    mock_set_voice.assert_not_called()
+
 
 # =============================================================================
 # Phase 4: Server Stop Tests

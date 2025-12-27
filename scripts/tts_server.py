@@ -108,8 +108,8 @@ def patch_model_generate(model, initial_voice: str):
     """
     Patch model.generate for dynamic voice switching and streaming metrics.
 
-    Checks active voice from config on each request. If voice changed,
-    reloads conditionals automatically. Logs streaming metrics.
+    Accepts voice parameter directly from request (preferred), or falls back
+    to config. Reloads conditionals when voice changes. Logs streaming metrics.
     """
     original_generate = model.generate
     sample_rate = model.sample_rate
@@ -120,14 +120,18 @@ def patch_model_generate(model, initial_voice: str):
     def dynamic_generate_with_metrics(
         text,
         ref_audio=None,
+        voice=None,
         **kwargs
     ):
-        # Check if voice changed in config
-        try:
-            from tts_config import get_active_voice
-            requested_voice = get_active_voice()
-        except ImportError:
-            requested_voice = state["current_voice"]
+        # Determine requested voice: prefer explicit parameter, fall back to config
+        if voice:
+            requested_voice = voice
+        else:
+            try:
+                from tts_config import get_active_voice
+                requested_voice = get_active_voice()
+            except ImportError:
+                requested_voice = state["current_voice"]
 
         # Reload voice if changed
         if requested_voice != state["current_voice"]:

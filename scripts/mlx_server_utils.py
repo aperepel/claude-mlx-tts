@@ -212,8 +212,8 @@ def speak_mlx_http(
 
     Args:
         text: Text to convert to speech.
-        voice: Voice name to use. If specified and different from active voice,
-               temporarily sets it as active so the server picks it up.
+        voice: Voice name to use. Passed directly to server API.
+               If None, server uses active voice from config.
         timeout: Request timeout in seconds.
 
     Raises:
@@ -224,31 +224,23 @@ def speak_mlx_http(
         log.warning("Empty text, skipping TTS")
         return
 
-    # If a specific voice is requested, temporarily set it as active
-    # so the server picks it up (server reads active_voice from config)
-    original_voice = None
-    if voice:
-        try:
-            from tts_config import get_active_voice, set_active_voice
-            original_voice = get_active_voice()
-            if voice != original_voice:
-                log.debug(f"Temporarily switching voice: {original_voice} -> {voice}")
-                set_active_voice(voice)
-        except Exception as e:
-            log.warning(f"Failed to set voice {voice}: {e}")
+    # Voice is passed directly in the request payload - no config modification needed
+    # This avoids race conditions between concurrent hooks
 
     try:
         ensure_server_running()
 
         url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
-        # Always use the MLX_MODEL for the model parameter.
-        # Voice switching is handled by tts_server.py which reads from config.
+        # Pass voice directly to server API (mlx_audio server supports 'voice' field)
+        # Server will use this voice, or fall back to active voice from config if None
         payload = {
             "input": text,
             "model": MLX_MODEL,
             # Note: speed parameter not included - Chatterbox doesn't support it
         }
+        if voice:
+            payload["voice"] = voice
 
         log.debug(f"Sending TTS request: {text[:50]}...")
 
@@ -295,16 +287,6 @@ def speak_mlx_http(
 
     except requests.exceptions.RequestException as e:
         raise TTSRequestError(f"TTS request failed: {e}") from e
-
-    finally:
-        # Restore original voice if we changed it
-        if original_voice and voice and voice != original_voice:
-            try:
-                from tts_config import set_active_voice
-                log.debug(f"Restoring voice: {voice} -> {original_voice}")
-                set_active_voice(original_voice)
-            except Exception as e:
-                log.warning(f"Failed to restore voice {original_voice}: {e}")
 
 
 # =============================================================================
