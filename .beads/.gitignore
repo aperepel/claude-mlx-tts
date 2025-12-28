@@ -32,6 +32,7 @@ issues.jsonl
 interactions.jsonl
 metadata.json
 
-# Config can stay on main (optional)
-!config.yaml
-!config.json
+# Config lives on beads-sync branch (protected main mode)
+config.yaml
+config.json
+README.md
