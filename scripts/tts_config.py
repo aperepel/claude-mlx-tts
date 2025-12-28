@@ -37,6 +37,7 @@ explicit voice lookups.
 
 Can be overridden with TTS_CONFIG_PATH environment variable for testing.
 """
+import copy
 import json
 import os
 import re
@@ -102,8 +103,8 @@ def get_config_path() -> Path:
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    """Deep merge override into base, returning new dict."""
-    result = base.copy()
+    """Deep merge override into base, returning new dict without mutating base."""
+    result = copy.deepcopy(base)
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = _deep_merge(result[key], value)
@@ -116,7 +117,7 @@ def load_config() -> dict:
     """Load configuration from file, returning defaults if not found or invalid."""
     config_path = get_config_path()
     if not config_path.exists():
-        return DEFAULT_CONFIG.copy()
+        return copy.deepcopy(DEFAULT_CONFIG)
 
     try:
         with open(config_path) as f:
@@ -124,7 +125,7 @@ def load_config() -> dict:
         # Deep merge with defaults for any missing keys
         return _deep_merge(DEFAULT_CONFIG, file_config)
     except (json.JSONDecodeError, IOError):
-        return DEFAULT_CONFIG.copy()
+        return copy.deepcopy(DEFAULT_CONFIG)
 
 
 def save_config(config: dict) -> None:

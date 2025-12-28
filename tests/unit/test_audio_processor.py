@@ -167,13 +167,18 @@ class TestProcessChunk:
         assert isinstance(result, np.ndarray)
 
     def test_process_chunk_enabled_flag(self):
-        """process_chunk should bypass processing when enabled=False."""
+        """process_chunk should bypass processing when compressor/limiter disabled."""
         from audio_processor import process_chunk
 
         audio = np.random.randn(12000).astype(np.float32) * 0.5
-        result = process_chunk(audio, sample_rate=24000, enabled=False)
+        result = process_chunk(
+            audio,
+            sample_rate=24000,
+            compressor_enabled=False,
+            limiter_enabled=False,
+        )
 
-        # Should return input unchanged
+        # Should return input unchanged when both are disabled
         np.testing.assert_array_equal(result, audio)
 
 
@@ -188,13 +193,16 @@ class TestAudioProcessingBehavior:
         t = np.linspace(0, 1, 24000, dtype=np.float32)
         audio = np.sin(2 * np.pi * 440 * t) * 0.8  # Loud sine wave
 
-        # Process with compression only (no gain)
+        # Process with compression only (no gain stages)
         result = process_chunk(
             audio,
             sample_rate=24000,
+            input_gain_db=0,  # No input gain
             threshold_db=-6,
             ratio=4.0,
-            gain_db=0,  # No makeup gain to isolate compression effect
+            gain_db=0,  # No makeup gain
+            master_gain_db=0,  # No master gain
+            limiter_enabled=False,  # Disable limiter to isolate compressor
         )
 
         # RMS should be reduced for loud signals

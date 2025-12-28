@@ -3,16 +3,55 @@ Unit tests for TTS server lifecycle management.
 
 Run with: uv run pytest tests/unit/test_server_lifecycle.py -v
 """
+import io
 import os
 import sys
 import time
 import socket
+import struct
 from unittest.mock import patch, MagicMock
 
 import pytest
 
 # Add scripts to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
+
+
+def create_minimal_wav() -> bytes:
+    """Create a minimal valid WAV file (mono, 24kHz, 16-bit, ~10ms silence)."""
+    sample_rate = 24000
+    num_samples = 240  # ~10ms of silence
+    bits_per_sample = 16
+    num_channels = 1
+
+    # Audio data (silence)
+    audio_data = b'\x00\x00' * num_samples
+
+    # WAV header
+    byte_rate = sample_rate * num_channels * bits_per_sample // 8
+    block_align = num_channels * bits_per_sample // 8
+    data_size = len(audio_data)
+
+    wav = io.BytesIO()
+    # RIFF header
+    wav.write(b'RIFF')
+    wav.write(struct.pack('<I', 36 + data_size))  # File size - 8
+    wav.write(b'WAVE')
+    # fmt chunk
+    wav.write(b'fmt ')
+    wav.write(struct.pack('<I', 16))  # Chunk size
+    wav.write(struct.pack('<H', 1))   # Audio format (PCM)
+    wav.write(struct.pack('<H', num_channels))
+    wav.write(struct.pack('<I', sample_rate))
+    wav.write(struct.pack('<I', byte_rate))
+    wav.write(struct.pack('<H', block_align))
+    wav.write(struct.pack('<H', bits_per_sample))
+    # data chunk
+    wav.write(b'data')
+    wav.write(struct.pack('<I', data_size))
+    wav.write(audio_data)
+
+    return wav.getvalue()
 
 
 # =============================================================================
@@ -222,14 +261,15 @@ class TestSpeakMlxHttp:
 
         with patch("mlx_server_utils.ensure_server_running") as mock_ensure:
             with patch("mlx_server_utils.requests.post") as mock_post:
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.content = b""  # Empty audio data to skip playback
-                mock_post.return_value = mock_response
+                with patch("sounddevice.play"), patch("sounddevice.wait"):
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.content = create_minimal_wav()
+                    mock_post.return_value = mock_response
 
-                speak_mlx_http("Hello")
+                    speak_mlx_http("Hello")
 
-                mock_ensure.assert_called_once()
+                    mock_ensure.assert_called_once()
 
     def test_sends_correct_payload(self):
         """speak_mlx_http should send correct JSON payload to server."""
@@ -237,19 +277,20 @@ class TestSpeakMlxHttp:
 
         with patch("mlx_server_utils.ensure_server_running"):
             with patch("mlx_server_utils.requests.post") as mock_post:
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.content = b""  # Empty audio data to skip playback
-                mock_post.return_value = mock_response
+                with patch("sounddevice.play"), patch("sounddevice.wait"):
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.content = create_minimal_wav()
+                    mock_post.return_value = mock_response
 
-                speak_mlx_http("Test message")
+                    speak_mlx_http("Test message")
 
-                mock_post.assert_called_once()
-                call_kwargs = mock_post.call_args[1]
-                payload = call_kwargs["json"]
-                assert payload["input"] == "Test message"
-                # Note: speed not included - Chatterbox doesn't support it
-                assert "speed" not in payload
+                    mock_post.assert_called_once()
+                    call_kwargs = mock_post.call_args[1]
+                    payload = call_kwargs["json"]
+                    assert payload["input"] == "Test message"
+                    # Note: speed not included - Chatterbox doesn't support it
+                    assert "speed" not in payload
 
     def test_uses_correct_endpoint(self):
         """speak_mlx_http should POST to /v1/audio/speech endpoint."""
@@ -257,17 +298,18 @@ class TestSpeakMlxHttp:
 
         with patch("mlx_server_utils.ensure_server_running"):
             with patch("mlx_server_utils.requests.post") as mock_post:
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.content = b""  # Empty audio data to skip playback
-                mock_post.return_value = mock_response
+                with patch("sounddevice.play"), patch("sounddevice.wait"):
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.content = create_minimal_wav()
+                    mock_post.return_value = mock_response
 
-                speak_mlx_http("Test")
+                    speak_mlx_http("Test")
 
-                call_args = mock_post.call_args
-                url = call_args[0][0]
-                assert f":{TTS_SERVER_PORT}" in url
-                assert "/v1/audio/speech" in url
+                    call_args = mock_post.call_args
+                    url = call_args[0][0]
+                    assert f":{TTS_SERVER_PORT}" in url
+                    assert "/v1/audio/speech" in url
 
     def test_raises_on_server_error(self):
         """speak_mlx_http should raise on non-200 response."""
@@ -289,17 +331,18 @@ class TestSpeakMlxHttp:
 
         with patch("mlx_server_utils.ensure_server_running"):
             with patch("mlx_server_utils.requests.post") as mock_post:
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.content = b""  # Empty audio data to skip playback
-                mock_post.return_value = mock_response
+                with patch("sounddevice.play"), patch("sounddevice.wait"):
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.content = create_minimal_wav()
+                    mock_post.return_value = mock_response
 
-                speak_mlx_http("Test message", voice="custom_voice")
+                    speak_mlx_http("Test message", voice="custom_voice")
 
-                mock_post.assert_called_once()
-                call_kwargs = mock_post.call_args[1]
-                payload = call_kwargs["json"]
-                assert payload["voice"] == "custom_voice"
+                    mock_post.assert_called_once()
+                    call_kwargs = mock_post.call_args[1]
+                    payload = call_kwargs["json"]
+                    assert payload["voice"] == "custom_voice"
 
     def test_omits_voice_from_payload_when_not_specified(self):
         """speak_mlx_http should not include voice in payload when None."""
@@ -307,17 +350,18 @@ class TestSpeakMlxHttp:
 
         with patch("mlx_server_utils.ensure_server_running"):
             with patch("mlx_server_utils.requests.post") as mock_post:
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.content = b""  # Empty audio data to skip playback
-                mock_post.return_value = mock_response
+                with patch("sounddevice.play"), patch("sounddevice.wait"):
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.content = create_minimal_wav()
+                    mock_post.return_value = mock_response
 
-                speak_mlx_http("Test message")
+                    speak_mlx_http("Test message")
 
-                mock_post.assert_called_once()
-                call_kwargs = mock_post.call_args[1]
-                payload = call_kwargs["json"]
-                assert "voice" not in payload
+                    mock_post.assert_called_once()
+                    call_kwargs = mock_post.call_args[1]
+                    payload = call_kwargs["json"]
+                    assert "voice" not in payload
 
     def test_does_not_modify_config_when_voice_specified(self):
         """speak_mlx_http should NOT modify active_voice in config (prevents race conditions)."""
@@ -325,17 +369,18 @@ class TestSpeakMlxHttp:
 
         with patch("mlx_server_utils.ensure_server_running"):
             with patch("mlx_server_utils.requests.post") as mock_post:
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.content = b""
-                mock_post.return_value = mock_response
+                with patch("sounddevice.play"), patch("sounddevice.wait"):
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.content = create_minimal_wav()
+                    mock_post.return_value = mock_response
 
-                # Patch set_active_voice to verify it's NOT called
-                with patch("tts_config.set_active_voice") as mock_set_voice:
-                    speak_mlx_http("Test", voice="different_voice")
+                    # Patch set_active_voice to verify it's NOT called
+                    with patch("tts_config.set_active_voice") as mock_set_voice:
+                        speak_mlx_http("Test", voice="different_voice")
 
-                    # set_active_voice should NOT be called - we pass voice in payload instead
-                    mock_set_voice.assert_not_called()
+                        # set_active_voice should NOT be called - we pass voice in payload instead
+                        mock_set_voice.assert_not_called()
 
 
 # =============================================================================
