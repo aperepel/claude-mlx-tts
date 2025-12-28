@@ -33,6 +33,9 @@ try:
 except ImportError:
     AudioPlayer = None
 
+# Import tts_config for voice-specific settings
+import tts_config
+
 log = logging.getLogger(__name__)
 
 # Configuration - can be overridden by environment variables
@@ -264,11 +267,27 @@ def _generate_streaming_with_metrics(
 
     # Initialize audio processor for compression/limiting
     # Creates stateful processor that maintains compressor envelope across chunks
+    # Use voice-specific settings (not active voice settings)
     audio_processor = None
     try:
         from audio_processor import create_processor
-        audio_processor = create_processor(sample_rate=model.sample_rate)
-        log.debug("Audio processor initialized for streaming")
+        compressor = tts_config.get_effective_compressor(voice_name)
+        limiter = tts_config.get_effective_limiter(voice_name)
+        audio_processor = create_processor(
+            sample_rate=model.sample_rate,
+            input_gain_db=compressor.get("input_gain_db"),
+            threshold_db=compressor.get("threshold_db"),
+            ratio=compressor.get("ratio"),
+            attack_ms=compressor.get("attack_ms"),
+            release_ms=compressor.get("release_ms"),
+            gain_db=compressor.get("gain_db"),
+            master_gain_db=compressor.get("master_gain_db"),
+            compressor_enabled=compressor.get("enabled"),
+            limiter_threshold_db=limiter.get("threshold_db"),
+            limiter_release_ms=limiter.get("release_ms"),
+            limiter_enabled=limiter.get("enabled"),
+        )
+        log.debug(f"Audio processor initialized for streaming (voice={voice_name})")
     except ImportError:
         log.debug("audio_processor not available, skipping compression")
 

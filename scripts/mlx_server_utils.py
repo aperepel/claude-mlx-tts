@@ -50,6 +50,9 @@ try:
 except ImportError:
     create_processor = None
 
+# Import tts_config for voice-specific settings
+import tts_config
+
 log = logging.getLogger(__name__)
 
 # =============================================================================
@@ -302,9 +305,26 @@ def speak_mlx_http(
             data = data.astype(np.float32)
 
             # Apply compression/limiting for consistent, punchy playback
+            # Use voice-specific settings (not active voice settings)
             try:
                 from audio_processor import create_processor
-                processor = create_processor(sample_rate=samplerate)
+                # Get voice-specific compressor/limiter settings
+                compressor = tts_config.get_effective_compressor(voice)
+                limiter = tts_config.get_effective_limiter(voice)
+                processor = create_processor(
+                    sample_rate=samplerate,
+                    input_gain_db=compressor.get("input_gain_db"),
+                    threshold_db=compressor.get("threshold_db"),
+                    ratio=compressor.get("ratio"),
+                    attack_ms=compressor.get("attack_ms"),
+                    release_ms=compressor.get("release_ms"),
+                    gain_db=compressor.get("gain_db"),
+                    master_gain_db=compressor.get("master_gain_db"),
+                    compressor_enabled=compressor.get("enabled"),
+                    limiter_threshold_db=limiter.get("threshold_db"),
+                    limiter_release_ms=limiter.get("release_ms"),
+                    limiter_enabled=limiter.get("enabled"),
+                )
                 data = processor(data)
             except ImportError:
                 log.debug("audio_processor not available, skipping compression")
@@ -534,9 +554,25 @@ def play_streaming_http(
                         player = AudioPlayer(sample_rate=parser.header.sample_rate)
 
                     # Initialize audio processor for compression
+                    # Use voice-specific settings (not active voice settings)
                     if create_processor is not None and parser.header is not None:
-                        audio_processor = create_processor(sample_rate=parser.header.sample_rate)
-                        log.debug("Audio processor initialized for streaming")
+                        compressor = tts_config.get_effective_compressor(voice)
+                        limiter = tts_config.get_effective_limiter(voice)
+                        audio_processor = create_processor(
+                            sample_rate=parser.header.sample_rate,
+                            input_gain_db=compressor.get("input_gain_db"),
+                            threshold_db=compressor.get("threshold_db"),
+                            ratio=compressor.get("ratio"),
+                            attack_ms=compressor.get("attack_ms"),
+                            release_ms=compressor.get("release_ms"),
+                            gain_db=compressor.get("gain_db"),
+                            master_gain_db=compressor.get("master_gain_db"),
+                            compressor_enabled=compressor.get("enabled"),
+                            limiter_threshold_db=limiter.get("threshold_db"),
+                            limiter_release_ms=limiter.get("release_ms"),
+                            limiter_enabled=limiter.get("enabled"),
+                        )
+                        log.debug(f"Audio processor initialized for streaming (voice={voice})")
 
                 chunk_count += 1
                 total_samples += len(audio)
