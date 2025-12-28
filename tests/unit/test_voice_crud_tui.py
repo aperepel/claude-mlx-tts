@@ -338,3 +338,100 @@ class TestVoiceSelectorDeleteButtonState:
         from tts_tui import VoiceSelector
         selector = VoiceSelector()
         assert hasattr(selector, "on_option_list_option_highlighted")
+
+
+# =============================================================================
+# HookSettingsWidget Refresh Tests (mlx-tts-48c.4, mlx-tts-48c.5)
+# =============================================================================
+
+
+class TestHookSettingsWidgetRefresh:
+    """Tests for HookSettingsWidget voice dropdown refresh after CRUD operations."""
+
+    def test_hook_settings_widget_has_refresh_voices_method(self):
+        """HookSettingsWidget should have refresh_voices method."""
+        from tts_tui import HookSettingsWidget
+        widget = HookSettingsWidget(hook_type="stop")
+        assert hasattr(widget, "refresh_voices")
+
+    def test_hook_settings_widget_refresh_voices_is_callable(self):
+        """HookSettingsWidget.refresh_voices should be callable."""
+        from tts_tui import HookSettingsWidget
+        widget = HookSettingsWidget(hook_type="stop")
+        assert callable(widget.refresh_voices)
+
+    def test_hook_settings_widget_has_refreshing_flag(self):
+        """HookSettingsWidget should have _refreshing flag to prevent spurious saves."""
+        from tts_tui import HookSettingsWidget
+        widget = HookSettingsWidget(hook_type="stop")
+        assert hasattr(widget, "_refreshing")
+        assert widget._refreshing is False
+
+    def test_hook_settings_widget_on_select_changed_checks_refreshing(self):
+        """on_select_changed should check _refreshing flag to prevent saves during refresh."""
+        from tts_tui import HookSettingsWidget
+        import inspect
+        source = inspect.getsource(HookSettingsWidget.on_select_changed)
+        assert "_refreshing" in source
+
+    def test_hook_settings_widget_on_select_changed_checks_value_type(self):
+        """on_select_changed should check value type to handle Select.BLANK sentinel."""
+        from tts_tui import HookSettingsWidget
+        import inspect
+        source = inspect.getsource(HookSettingsWidget.on_select_changed)
+        assert "isinstance(event.value, str)" in source
+
+    def test_hook_settings_widget_has_clear_refreshing_method(self):
+        """HookSettingsWidget should have _clear_refreshing for async event handling."""
+        from tts_tui import HookSettingsWidget
+        widget = HookSettingsWidget(hook_type="stop")
+        assert hasattr(widget, "_clear_refreshing")
+        assert callable(widget._clear_refreshing)
+
+
+class TestMainScreenRefreshHookWidgets:
+    """Tests for MainScreen._refresh_hook_widgets() helper."""
+
+    def test_main_screen_has_refresh_hook_widgets_method(self):
+        """MainScreen should have _refresh_hook_widgets method."""
+        from tts_tui import MainScreen
+        screen = MainScreen()
+        assert hasattr(screen, "_refresh_hook_widgets")
+
+    def test_main_screen_refresh_hook_widgets_is_callable(self):
+        """MainScreen._refresh_hook_widgets should be callable."""
+        from tts_tui import MainScreen
+        screen = MainScreen()
+        assert callable(screen._refresh_hook_widgets)
+
+
+class TestCrudOperationsRefreshHookWidgets:
+    """Tests that CRUD operations refresh HookSettingsWidget voice dropdowns."""
+
+    def test_delete_handler_calls_refresh_hook_widgets(self):
+        """_handle_delete_result should call _refresh_hook_widgets."""
+        from tts_tui import MainScreen
+        import inspect
+        source = inspect.getsource(MainScreen._handle_delete_result)
+        assert "_refresh_hook_widgets" in source
+
+    def test_rename_handler_calls_refresh_hook_widgets(self):
+        """_handle_input_result (rename) should call _refresh_hook_widgets."""
+        from tts_tui import MainScreen
+        import inspect
+        source = inspect.getsource(MainScreen._handle_input_result)
+        assert "_refresh_hook_widgets" in source
+
+    def test_copy_handler_calls_refresh_hook_widgets(self):
+        """on_voice_selector_copy_voice_requested should call _refresh_hook_widgets."""
+        from tts_tui import MainScreen
+        import inspect
+        source = inspect.getsource(MainScreen.on_voice_selector_copy_voice_requested)
+        assert "_refresh_hook_widgets" in source
+
+    def test_clone_handler_calls_refresh_hook_widgets(self):
+        """on_clone_lab_widget_voice_cloned should call _refresh_hook_widgets."""
+        from tts_tui import MainScreen
+        import inspect
+        source = inspect.getsource(MainScreen.on_clone_lab_widget_voice_cloned)
+        assert "_refresh_hook_widgets" in source

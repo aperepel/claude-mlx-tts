@@ -228,9 +228,20 @@ def speak_mlx(message: str, voice: str | None = None):
         speak_say(message)
 
 
+# Default permission phrase template (fallback if config unavailable)
+PERMISSION_PHRASE_DEFAULT = "Claude needs permission to run {tool_name}."
+
+
 def speak_notification(tool_name: str):
     """Speak the permission notification using TTS."""
-    message = f"Claude needs permission to run {tool_name}."
+    # Get phrase template from config (with fallback for standalone usage)
+    try:
+        from tts_config import get_effective_hook_prompt
+        phrase_template = get_effective_hook_prompt("permission_request")
+    except ImportError:
+        phrase_template = PERMISSION_PHRASE_DEFAULT
+
+    message = phrase_template.format(tool_name=tool_name)
 
     if is_mlx_available():
         try:

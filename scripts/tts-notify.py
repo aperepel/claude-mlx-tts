@@ -48,8 +48,8 @@ THINKING_KEYWORDS = ["ultrathink", "think harder", "think hard", "think"]
 SAY_VOICE = "Daniel"        # Try: say -v ? to list voices
 SAY_RATE = 180              # Words per minute
 
-# Attention prefix (heads-up before content)
-ATTENTION_PREFIX = "[clear throat] Attention on deck."
+# Attention prefix (heads-up before content) - fallback if config unavailable
+ATTENTION_PREFIX_DEFAULT = "[clear throat] Attention on deck."
 
 # MLX Voice Cloning settings
 MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"
@@ -330,7 +330,15 @@ def main():
 
     log.info("Generating summary...")
     summary = summarize(last_message)
-    message = f"{ATTENTION_PREFIX} ... {summary}"
+
+    # Get attention grabber from config (with fallback for standalone usage)
+    try:
+        from tts_config import get_effective_hook_prompt
+        attention_grabber = get_effective_hook_prompt("stop")
+    except ImportError:
+        attention_grabber = ATTENTION_PREFIX_DEFAULT
+
+    message = f"{attention_grabber} ... {summary}"
     log.info(f"Speaking: {message[:100]}...")
     speak(message)
     log.info("TTS complete")

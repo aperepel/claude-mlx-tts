@@ -418,13 +418,22 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: python mlx_server_utils.py <text>", file=sys.stderr)
+        print("Usage: python mlx_server_utils.py <text> [--voice <voice_name>]", file=sys.stderr)
         sys.exit(1)
 
-    text = " ".join(sys.argv[1:])
+    # Parse arguments
+    voice_name = None
+    args = sys.argv[1:]
+    if "--voice" in args:
+        voice_idx = args.index("--voice")
+        if voice_idx + 1 < len(args):
+            voice_name = args[voice_idx + 1]
+            args = args[:voice_idx] + args[voice_idx + 2:]
+
+    text = " ".join(args)
 
     # Always use speak_mlx for CLI - it correctly reads active voice from config.
     # The HTTP server path (speak_mlx_http) is for hooks where we leverage
     # the pre-warmed server, but it doesn't dynamically switch voices.
     from mlx_tts_core import speak_mlx
-    speak_mlx(text)
+    speak_mlx(text, voice_name=voice_name)

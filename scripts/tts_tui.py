@@ -620,10 +620,14 @@ class VoiceSelector(Container):
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Handle voice selection."""
         voice_name = str(event.option.id)
+
+        # Skip if clicking the same voice (no change)
+        if voice_name == get_active_voice():
+            return
+
         try:
             set_active_voice(voice_name)
             self.post_message(self.VoiceChanged(voice_name))
-            self.notify("Voice settings saved", severity="information")
         except ValueError as e:
             self.notify(str(e), severity="error")
 
@@ -1084,9 +1088,10 @@ class HookSettingsWidget(Container):
         width: 1fr;
     }
     HookSettingsWidget > .help-row {
-        height: 3;
+        height: auto;
         width: 100%;
         align: left middle;
+        padding: 1 0;
     }
     HookSettingsWidget > .help-row > .help-text {
         color: $text-muted;
@@ -1098,10 +1103,17 @@ class HookSettingsWidget(Container):
     }
     """
 
+    is_playing = reactive(False)
+
+    # Debounce delay for saving prompts (seconds)
+    PROMPT_SAVE_DELAY = 0.5
+
     def __init__(self, hook_type: str, **kwargs) -> None:
         super().__init__(**kwargs)
         self._hook_type = hook_type
         self._initialized = False
+        self._save_timer = None
+        self._refreshing = False  # Flag to prevent saves during refresh
 
     def on_mount(self) -> None:
         """Schedule initialization flag after initial events are processed."""
@@ -1110,6 +1122,36 @@ class HookSettingsWidget(Container):
     def _mark_initialized(self) -> None:
         """Mark widget as initialized - called after initial Changed events."""
         self._initialized = True
+
+    def refresh_voices(self) -> None:
+        """Refresh the voice dropdown after voice CRUD operations."""
+        # Prevent on_select_changed from saving during refresh
+        # Note: Events are queued, so we use call_later to reset after they process
+        self._refreshing = True
+
+        voices = discover_voices()
+        current_voice = get_hook_voice(self._hook_type)
+
+        # Build voice options: "-- inherit --" (uses active voice) + all available voices
+        voice_options = [("-- inherit --", "")]
+        voice_options.extend((voice, voice) for voice in voices)
+
+        # Update the Select widget
+        voice_select = self.query_one(f"#hook-voice-{self._hook_type}", Select)
+        voice_select.set_options(voice_options)
+
+        # Restore selection (empty string = inherit, or specific voice if still exists)
+        if current_voice and current_voice in voices:
+            voice_select.value = current_voice
+        else:
+            voice_select.value = ""
+
+        # Reset flag after queued events are processed
+        self.call_later(self._clear_refreshing)
+
+    def _clear_refreshing(self) -> None:
+        """Clear the refreshing flag after events are processed."""
+        self._refreshing = False
 
     def compose(self) -> ComposeResult:
         self.border_title = HOOK_LABELS.get(self._hook_type, self._hook_type)
@@ -1142,42 +1184,89 @@ class HookSettingsWidget(Container):
                 id=f"hook-prompt-{self._hook_type}",
             )
 
-        # Help text and reset button row
+        # Help text and buttons row
         help_text = HOOK_HELP_TEXT.get(self._hook_type, "")
         with Horizontal(classes="help-row"):
             yield Static(help_text, classes="help-text")
+            yield Button("Play", id=f"hook-play-{self._hook_type}", variant="primary")
             yield Button("Reset", id=f"hook-reset-{self._hook_type}", variant="default")
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle voice selection change."""
         if event.select.id == f"hook-voice-{self._hook_type}":
+            # Skip saves during initialization or refresh
+            if not self._initialized or self._refreshing:
+                return
+
+            # Skip if value is not a string (e.g., Select.BLANK sentinel)
+            if not isinstance(event.value, str):
+                return
+
             # Empty string means inherit from active voice
-            voice = event.value if event.value else None
+            new_voice = event.value if event.value else None
+
+            # Skip if value hasn't actually changed (clicking same item)
+            current_voice = get_hook_voice(self._hook_type)
+            if new_voice == current_voice:
+                return
+
             try:
-                set_hook_voice(self._hook_type, voice)
-                if self._initialized:
-                    self.notify("Voice setting saved", severity="information")
+                set_hook_voice(self._hook_type, new_voice)
             except ValueError as e:
                 self.notify(str(e), severity="error")
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Handle prompt input change."""
+        """Handle prompt input change with debouncing."""
         if event.input.id == f"hook-prompt-{self._hook_type}":
-            prompt = event.value.strip()
-            default_prompt = get_default_hook_prompt(self._hook_type)
+            # Ignore initial population of input fields
+            if not self._initialized:
+                return
 
-            # If empty or matches default, clear custom prompt
-            if not prompt or prompt == default_prompt:
-                set_hook_prompt(self._hook_type, None)
-            else:
-                set_hook_prompt(self._hook_type, prompt)
+            # Cancel any pending save
+            if self._save_timer is not None:
+                self._save_timer.stop()
 
-            if self._initialized:
-                self.notify("Prompt saved", severity="information")
+            # Schedule debounced save
+            self._save_timer = self.set_timer(
+                self.PROMPT_SAVE_DELAY,
+                lambda: self._save_prompt(event.value)
+            )
+
+    def _save_prompt(self, value: str) -> None:
+        """Actually save the prompt after debounce delay."""
+        prompt = value.strip()
+        default_prompt = get_default_hook_prompt(self._hook_type)
+
+        # Get current value to check if actually changed
+        current_prompt = get_hook_prompt(self._hook_type)
+        current_effective = current_prompt if current_prompt else default_prompt
+
+        # Skip if value hasn't changed
+        if prompt == current_effective:
+            return
+
+        # If empty or matches default, clear custom prompt
+        if not prompt or prompt == default_prompt:
+            set_hook_prompt(self._hook_type, None)
+        else:
+            set_hook_prompt(self._hook_type, prompt)
+        # No notification - auto-save is silent
+
+    def watch_is_playing(self, playing: bool) -> None:
+        """Update Play button based on playing state."""
+        btn = self.query_one(f"#hook-play-{self._hook_type}", Button)
+        if playing:
+            btn.variant = "default"
+            btn.label = "Playing..."
+        else:
+            btn.variant = "primary"
+            btn.label = "Play"
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle reset button press."""
-        if event.button.id == f"hook-reset-{self._hook_type}":
+        """Handle button presses."""
+        if event.button.id == f"hook-play-{self._hook_type}":
+            self._play_prompt()
+        elif event.button.id == f"hook-reset-{self._hook_type}":
             default_prompt = get_default_hook_prompt(self._hook_type)
             set_hook_prompt(self._hook_type, None)
 
@@ -1186,6 +1275,70 @@ class HookSettingsWidget(Container):
             prompt_input.value = default_prompt
 
             self.notify("Prompt reset to default", severity="information")
+
+    def _play_prompt(self) -> None:
+        """Play the current prompt using TTS."""
+        if self.is_playing:
+            return
+
+        self.is_playing = True
+        self.app.set_focus(None)
+        self._run_hook_tts_worker()
+
+    @work(exclusive=True, thread=True)
+    def _run_hook_tts_worker(self) -> dict:
+        """Background worker for hook prompt TTS playback."""
+        import subprocess
+        import sys
+        import os
+
+        # Get current prompt text from input
+        prompt_input = self.query_one(f"#hook-prompt-{self._hook_type}", Input)
+        prompt_text = prompt_input.value
+
+        # For permission_request, substitute placeholder with sample tool name
+        if self._hook_type == "permission_request":
+            prompt_text = prompt_text.format(tool_name="Bash")
+
+        # Get effective voice for this hook
+        voice = get_hook_voice(self._hook_type)
+        if not voice:
+            voice = get_active_voice()
+
+        scripts_dir = os.path.dirname(os.path.abspath(__file__))
+        tts_script = os.path.join(scripts_dir, "mlx_server_utils.py")
+
+        try:
+            # Pass voice as second argument
+            result = subprocess.run(
+                [sys.executable, tts_script, prompt_text, "--voice", voice],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            return {"success": result.returncode == 0, "stderr": result.stderr}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": "TTS timed out after 60s"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle TTS worker completion."""
+        from textual.worker import WorkerState
+
+        if event.worker.name != "_run_hook_tts_worker":
+            return
+
+        if event.state == WorkerState.SUCCESS:
+            result = event.worker.result
+            self.is_playing = False
+            if not result.get("success"):
+                error = result.get("error") or result.get("stderr", "")[:100]
+                self.notify(f"TTS failed: {error}", severity="error")
+        elif event.state in (WorkerState.ERROR, WorkerState.CANCELLED):
+            self.is_playing = False
+
+        self.app.set_focus(None)
 
 
 # Default preview phrases
@@ -2057,6 +2210,9 @@ class MainScreen(Screen):
         display_name = get_voice_display(event.voice_name)
         option_list.add_option(Option(display_name, id=event.voice_name))
 
+        # Refresh hook widget voice dropdowns to include the new voice
+        self._refresh_hook_widgets()
+
         # Notify user
         self.notify(f"Voice '{event.voice_name}' created successfully!", severity="information")
 
@@ -2073,6 +2229,9 @@ class MainScreen(Screen):
             # Refresh voice selector
             voice_selector = self.query_one(VoiceSelector)
             voice_selector.refresh_voices()
+
+            # Refresh hook widget voice dropdowns
+            self._refresh_hook_widgets()
         except ValueError as e:
             self.notify(str(e), severity="error")
 
@@ -2094,6 +2253,12 @@ class MainScreen(Screen):
         )
         self.app.push_screen(modal, callback=self._handle_delete_result)
 
+    def _refresh_hook_widgets(self) -> None:
+        """Refresh all HookSettingsWidget voice dropdowns after voice CRUD."""
+        for hook_type in HOOK_TYPES:
+            hook_widget = self.query_one(f"#hook-settings-{hook_type}", HookSettingsWidget)
+            hook_widget.refresh_voices()
+
     def _handle_delete_result(self, voice_name: str | None) -> None:
         """Handle delete modal result via callback."""
         if voice_name is None:
@@ -2110,6 +2275,9 @@ class MainScreen(Screen):
             # Refresh compressor/limiter with new active voice
             self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
             self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
+
+            # Refresh hook widget voice dropdowns
+            self._refresh_hook_widgets()
         except ValueError as e:
             self.notify(str(e), severity="error")
 
@@ -2133,6 +2301,9 @@ class MainScreen(Screen):
             # Refresh compressor/limiter if needed
             self.query_one("#compressor-widget", CompressorWidget)._refresh_fields()
             self.query_one("#limiter-widget", LimiterWidget)._refresh_fields()
+
+            # Refresh hook widget voice dropdowns
+            self._refresh_hook_widgets()
         except ValueError as e:
             self.notify(str(e), severity="error")
 
