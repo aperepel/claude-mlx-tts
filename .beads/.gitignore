@@ -32,7 +32,7 @@ issues.jsonl
 interactions.jsonl
 metadata.json
 
-# Config lives on beads-sync branch (protected main mode)
-config.yaml
+# Config: essential settings (sync-branch, prefix) tracked on main
+# Full config (voices, audio settings) lives on beads-sync
 config.json
 README.md

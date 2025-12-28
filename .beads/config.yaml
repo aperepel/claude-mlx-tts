@@ -1,0 +1,8 @@
+# Beads Configuration - Essential settings for worktree setup
+# Full config (voices, audio settings) lives on beads-sync branch
+
+# Issue prefix for this repository
+issue-prefix: "mlx-tts"
+
+# Git branch for beads sync (required for new worktrees)
+sync-branch: "beads-sync"
