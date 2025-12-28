@@ -309,14 +309,14 @@ class TestActiveVoice:
     """Tests for active voice management."""
 
     def test_get_active_voice_returns_default_when_not_set(self):
-        """get_active_voice should return 'default_voice' when not configured."""
+        """get_active_voice should return 'default' when not configured."""
         from tts_config import get_active_voice
 
         with patch("tts_config.load_config") as mock_load:
             mock_load.return_value = {"profiles": {}, "active_profile": "default"}
             voice = get_active_voice()
 
-        assert voice == "default_voice"
+        assert voice == "default"
 
     def test_get_active_voice_returns_configured_voice(self):
         """get_active_voice should return the configured active voice."""
@@ -1569,3 +1569,270 @@ class TestResolveVoicePathWithSafetensors:
             with patch("tts_config._PLUGIN_ROOT", Path(tmpdir)):
                 with pytest.raises(ValueError, match="Invalid voice name"):
                     resolve_voice_path("evil_voice")
+
+
+# =============================================================================
+# Per-Hook Prompt Configuration Tests (mlx-tts-48c)
+# =============================================================================
+
+
+class TestHookDefaultPrompts:
+    """Tests for HOOK_DEFAULT_PROMPTS constant."""
+
+    def test_hook_default_prompts_exists(self):
+        """HOOK_DEFAULT_PROMPTS should be defined."""
+        from tts_config import HOOK_DEFAULT_PROMPTS
+
+        assert isinstance(HOOK_DEFAULT_PROMPTS, dict)
+
+    def test_hook_default_prompts_has_stop(self):
+        """HOOK_DEFAULT_PROMPTS should have 'stop' key."""
+        from tts_config import HOOK_DEFAULT_PROMPTS
+
+        assert "stop" in HOOK_DEFAULT_PROMPTS
+        assert isinstance(HOOK_DEFAULT_PROMPTS["stop"], str)
+
+    def test_hook_default_prompts_has_permission_request(self):
+        """HOOK_DEFAULT_PROMPTS should have 'permission_request' key."""
+        from tts_config import HOOK_DEFAULT_PROMPTS
+
+        assert "permission_request" in HOOK_DEFAULT_PROMPTS
+        assert isinstance(HOOK_DEFAULT_PROMPTS["permission_request"], str)
+
+    def test_hook_default_prompts_stop_value(self):
+        """HOOK_DEFAULT_PROMPTS['stop'] should have expected value."""
+        from tts_config import HOOK_DEFAULT_PROMPTS
+
+        assert HOOK_DEFAULT_PROMPTS["stop"] == "[clear throat] Attention on deck."
+
+    def test_hook_default_prompts_permission_value(self):
+        """HOOK_DEFAULT_PROMPTS['permission_request'] should have expected value."""
+        from tts_config import HOOK_DEFAULT_PROMPTS
+
+        assert HOOK_DEFAULT_PROMPTS["permission_request"] == "Claude needs permission to run {tool_name}."
+
+
+class TestGetDefaultHookPrompt:
+    """Tests for get_default_hook_prompt function."""
+
+    def test_get_default_hook_prompt_stop(self):
+        """get_default_hook_prompt should return default for 'stop'."""
+        from tts_config import get_default_hook_prompt
+
+        result = get_default_hook_prompt("stop")
+        assert result == "[clear throat] Attention on deck."
+
+    def test_get_default_hook_prompt_permission_request(self):
+        """get_default_hook_prompt should return default for 'permission_request'."""
+        from tts_config import get_default_hook_prompt
+
+        result = get_default_hook_prompt("permission_request")
+        assert result == "Claude needs permission to run {tool_name}."
+
+    def test_get_default_hook_prompt_invalid_hook_type(self):
+        """get_default_hook_prompt should raise ValueError for invalid hook type."""
+        from tts_config import get_default_hook_prompt
+
+        with pytest.raises(ValueError, match="Invalid hook type"):
+            get_default_hook_prompt("invalid_hook")
+
+
+class TestGetHookPrompt:
+    """Tests for get_hook_prompt function."""
+
+    def test_get_hook_prompt_returns_none_when_not_set(self):
+        """get_hook_prompt should return None when no custom prompt is set."""
+        from tts_config import get_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"hooks": {}}
+            result = get_hook_prompt("stop")
+
+        assert result is None
+
+    def test_get_hook_prompt_returns_custom_prompt(self):
+        """get_hook_prompt should return custom prompt when set."""
+        from tts_config import get_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "hooks": {
+                    "stop": {"prompt": "Hey, listen up!"}
+                }
+            }
+            result = get_hook_prompt("stop")
+
+        assert result == "Hey, listen up!"
+
+    def test_get_hook_prompt_returns_none_when_hook_has_no_prompt(self):
+        """get_hook_prompt should return None when hook exists but has no prompt."""
+        from tts_config import get_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "hooks": {
+                    "stop": {"voice": "some_voice"}
+                }
+            }
+            result = get_hook_prompt("stop")
+
+        assert result is None
+
+    def test_get_hook_prompt_invalid_hook_type(self):
+        """get_hook_prompt should raise ValueError for invalid hook type."""
+        from tts_config import get_hook_prompt
+
+        with pytest.raises(ValueError, match="Invalid hook type"):
+            get_hook_prompt("invalid_hook")
+
+
+class TestSetHookPrompt:
+    """Tests for set_hook_prompt function."""
+
+    def test_set_hook_prompt_saves_custom_prompt(self):
+        """set_hook_prompt should save custom prompt to config."""
+        from tts_config import set_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {"hooks": {}}
+            set_hook_prompt("stop", "Custom attention grabber!")
+
+            mock_save.assert_called_once()
+            saved = mock_save.call_args[0][0]
+            assert saved["hooks"]["stop"]["prompt"] == "Custom attention grabber!"
+
+    def test_set_hook_prompt_clears_with_none(self):
+        """set_hook_prompt with None should clear custom prompt."""
+        from tts_config import set_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "hooks": {
+                    "stop": {"prompt": "Old prompt", "voice": "some_voice"}
+                }
+            }
+            set_hook_prompt("stop", None)
+
+            mock_save.assert_called_once()
+            saved = mock_save.call_args[0][0]
+            assert "prompt" not in saved["hooks"]["stop"]
+            assert saved["hooks"]["stop"]["voice"] == "some_voice"
+
+    def test_set_hook_prompt_cleans_up_empty_hook(self):
+        """set_hook_prompt should clean up empty hook dict when clearing."""
+        from tts_config import set_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "hooks": {
+                    "stop": {"prompt": "Old prompt"},
+                    "permission_request": {"voice": "some_voice"}
+                }
+            }
+            set_hook_prompt("stop", None)
+
+            saved = mock_save.call_args[0][0]
+            assert "stop" not in saved["hooks"]
+            assert saved["hooks"]["permission_request"]["voice"] == "some_voice"
+
+    def test_set_hook_prompt_cleans_up_empty_hooks(self):
+        """set_hook_prompt should clean up empty hooks dict."""
+        from tts_config import set_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "hooks": {
+                    "stop": {"prompt": "Old prompt"}
+                }
+            }
+            set_hook_prompt("stop", None)
+
+            saved = mock_save.call_args[0][0]
+            assert "hooks" not in saved
+
+    def test_set_hook_prompt_preserves_voice(self):
+        """set_hook_prompt should preserve voice setting."""
+        from tts_config import set_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load, \
+             patch("tts_config.save_config") as mock_save:
+            mock_load.return_value = {
+                "hooks": {
+                    "stop": {"voice": "my_voice"}
+                }
+            }
+            set_hook_prompt("stop", "New prompt")
+
+            saved = mock_save.call_args[0][0]
+            assert saved["hooks"]["stop"]["prompt"] == "New prompt"
+            assert saved["hooks"]["stop"]["voice"] == "my_voice"
+
+    def test_set_hook_prompt_invalid_hook_type(self):
+        """set_hook_prompt should raise ValueError for invalid hook type."""
+        from tts_config import set_hook_prompt
+
+        with pytest.raises(ValueError, match="Invalid hook type"):
+            set_hook_prompt("invalid_hook", "Some prompt")
+
+
+class TestGetEffectiveHookPrompt:
+    """Tests for get_effective_hook_prompt function."""
+
+    def test_get_effective_hook_prompt_returns_default_when_not_set(self):
+        """get_effective_hook_prompt should return default when no custom prompt."""
+        from tts_config import get_effective_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"hooks": {}}
+            result = get_effective_hook_prompt("stop")
+
+        assert result == "[clear throat] Attention on deck."
+
+    def test_get_effective_hook_prompt_returns_custom_when_set(self):
+        """get_effective_hook_prompt should return custom prompt when set."""
+        from tts_config import get_effective_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "hooks": {
+                    "stop": {"prompt": "Custom attention grabber!"}
+                }
+            }
+            result = get_effective_hook_prompt("stop")
+
+        assert result == "Custom attention grabber!"
+
+    def test_get_effective_hook_prompt_permission_request_default(self):
+        """get_effective_hook_prompt should return default for permission_request."""
+        from tts_config import get_effective_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {"hooks": {}}
+            result = get_effective_hook_prompt("permission_request")
+
+        assert result == "Claude needs permission to run {tool_name}."
+
+    def test_get_effective_hook_prompt_permission_request_custom(self):
+        """get_effective_hook_prompt should return custom for permission_request."""
+        from tts_config import get_effective_hook_prompt
+
+        with patch("tts_config.load_config") as mock_load:
+            mock_load.return_value = {
+                "hooks": {
+                    "permission_request": {"prompt": "Permission needed for {tool_name}!"}
+                }
+            }
+            result = get_effective_hook_prompt("permission_request")
+
+        assert result == "Permission needed for {tool_name}!"
+
+    def test_get_effective_hook_prompt_invalid_hook_type(self):
+        """get_effective_hook_prompt should raise ValueError for invalid hook type."""
+        from tts_config import get_effective_hook_prompt
+
+        with pytest.raises(ValueError, match="Invalid hook type"):
+            get_effective_hook_prompt("invalid_hook")

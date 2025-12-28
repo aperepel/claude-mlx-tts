@@ -152,6 +152,7 @@ import tts_config
 from tts_config import (
     DEFAULT_COMPRESSOR,
     DEFAULT_LIMITER,
+    HOOK_DEFAULT_PROMPTS,
     HOOK_TYPES,
     VOICE_NAME_PATTERN,
     copy_voice,
@@ -159,8 +160,11 @@ from tts_config import (
     discover_voices,
     get_active_voice,
     get_compressor_config,
+    get_default_hook_prompt,
     get_effective_compressor,
+    get_effective_hook_prompt,
     get_effective_limiter,
+    get_hook_prompt,
     get_hook_voice,
     get_limiter_config,
     get_streaming_interval,
@@ -170,6 +174,7 @@ from tts_config import (
     reset_all_audio_to_defaults,
     set_active_voice,
     set_compressor_setting,
+    set_hook_prompt,
     set_hook_voice,
     set_limiter_setting,
     set_streaming_interval,
@@ -286,6 +291,18 @@ class ServerStatusWidget(Static):
 HOOK_LABELS = {
     "stop": "Stop (completion)",
     "permission_request": "Permission Request",
+}
+
+# Prompt field labels per hook type
+HOOK_PROMPT_LABELS = {
+    "stop": "Attention Grabber:",
+    "permission_request": "Phrase:",
+}
+
+# Help text per hook type
+HOOK_HELP_TEXT = {
+    "stop": "Plays before the AI-generated summary",
+    "permission_request": "Use {tool_name} for the tool name",
 }
 
 
@@ -1040,31 +1057,44 @@ class LimiterWidget(Container):
         self.query_one("#limiter-release-field", FormField).value = preset["release_ms"]
 
 
-class HookVoiceSelector(Container):
-    """Widget for selecting voice override for a specific hook type."""
+class HookSettingsWidget(Container):
+    """Widget for configuring voice and prompt for a specific hook type."""
 
     DEFAULT_CSS = """
-    HookVoiceSelector {
+    HookSettingsWidget {
         height: auto;
         width: 100%;
-        padding: 1 2;
-        margin: 0 0 1 0;
+        border: round $accent;
+        border-title-color: $text;
+        padding: 1;
+        margin-bottom: 1;
     }
-    HookVoiceSelector > .hook-row {
+    HookSettingsWidget > .hook-row {
         height: 3;
         width: 100%;
     }
-    HookVoiceSelector > .hook-row > .hook-label {
-        width: 24;
+    HookSettingsWidget > .hook-row > .hook-label {
+        width: 20;
         padding: 1 1 1 0;
     }
-    HookVoiceSelector > .hook-row > Select {
+    HookSettingsWidget > .hook-row > Select {
         width: 30;
     }
-    HookVoiceSelector > .hook-description {
+    HookSettingsWidget > .hook-row > Input {
+        width: 1fr;
+    }
+    HookSettingsWidget > .help-row {
+        height: 3;
+        width: 100%;
+        align: left middle;
+    }
+    HookSettingsWidget > .help-row > .help-text {
         color: $text-muted;
-        padding: 0 0 0 2;
-        height: auto;
+        width: 1fr;
+        padding: 1 0 0 0;
+    }
+    HookSettingsWidget > .help-row > Button {
+        margin-left: 1;
     }
     """
 
@@ -1082,23 +1112,41 @@ class HookVoiceSelector(Container):
         self._initialized = True
 
     def compose(self) -> ComposeResult:
+        self.border_title = HOOK_LABELS.get(self._hook_type, self._hook_type)
+
         voices = discover_voices()
         current_voice = get_hook_voice(self._hook_type)
+        current_prompt = get_hook_prompt(self._hook_type)
+        default_prompt = get_default_hook_prompt(self._hook_type)
 
-        # Build options: "-- inherit --" (uses active voice) + all available voices
-        options = [("-- inherit --", "")]
-        options.extend((voice, voice) for voice in voices)
+        # Build voice options: "-- inherit --" (uses active voice) + all available voices
+        voice_options = [("-- inherit --", "")]
+        voice_options.extend((voice, voice) for voice in voices)
 
-        # Determine current value (empty string means inherit)
-        current_value = current_voice if current_voice else ""
-
+        # Voice row
         with Horizontal(classes="hook-row"):
-            yield Label(HOOK_LABELS.get(self._hook_type, self._hook_type), classes="hook-label")
+            yield Label("Voice:", classes="hook-label")
             yield Select(
-                options,
-                value=current_value,
+                voice_options,
+                value=current_voice if current_voice else "",
                 id=f"hook-voice-{self._hook_type}",
             )
+
+        # Prompt row
+        prompt_label = HOOK_PROMPT_LABELS.get(self._hook_type, "Prompt:")
+        with Horizontal(classes="hook-row"):
+            yield Label(prompt_label, classes="hook-label")
+            yield Input(
+                value=current_prompt if current_prompt else default_prompt,
+                placeholder=default_prompt,
+                id=f"hook-prompt-{self._hook_type}",
+            )
+
+        # Help text and reset button row
+        help_text = HOOK_HELP_TEXT.get(self._hook_type, "")
+        with Horizontal(classes="help-row"):
+            yield Static(help_text, classes="help-text")
+            yield Button("Reset", id=f"hook-reset-{self._hook_type}", variant="default")
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle voice selection change."""
@@ -1108,9 +1156,36 @@ class HookVoiceSelector(Container):
             try:
                 set_hook_voice(self._hook_type, voice)
                 if self._initialized:
-                    self.notify("Hook settings saved", severity="information")
+                    self.notify("Voice setting saved", severity="information")
             except ValueError as e:
                 self.notify(str(e), severity="error")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle prompt input change."""
+        if event.input.id == f"hook-prompt-{self._hook_type}":
+            prompt = event.value.strip()
+            default_prompt = get_default_hook_prompt(self._hook_type)
+
+            # If empty or matches default, clear custom prompt
+            if not prompt or prompt == default_prompt:
+                set_hook_prompt(self._hook_type, None)
+            else:
+                set_hook_prompt(self._hook_type, prompt)
+
+            if self._initialized:
+                self.notify("Prompt saved", severity="information")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle reset button press."""
+        if event.button.id == f"hook-reset-{self._hook_type}":
+            default_prompt = get_default_hook_prompt(self._hook_type)
+            set_hook_prompt(self._hook_type, None)
+
+            # Update the input field to show the default
+            prompt_input = self.query_one(f"#hook-prompt-{self._hook_type}", Input)
+            prompt_input.value = default_prompt
+
+            self.notify("Prompt reset to default", severity="information")
 
 
 # Default preview phrases
@@ -1883,7 +1958,7 @@ class MainScreen(Screen):
     BINDINGS = [
         Binding("1", "switch_tab('voice-lab')", "Voice Lab", show=True, priority=True),
         Binding("2", "switch_tab('clone-lab')", "Clone Lab", show=True, priority=True),
-        Binding("3", "switch_tab('hooks')", "Hooks", show=True, priority=True),
+        Binding("3", "switch_tab('hooks')", "Prompts", show=True, priority=True),
         Binding("4", "switch_tab('system')", "System", show=True, priority=True),
         Binding("5", "switch_tab('about')", "About", show=True, priority=True),
     ]
@@ -1906,16 +1981,16 @@ class MainScreen(Screen):
                     classes="info",
                 )
                 yield CloneLabWidget(id="clone-lab-widget")
-            with TabPane("Hooks", id="hooks"):
-                yield Label("Per-Hook Voice Settings", classes="section-title")
+            with TabPane("Prompt Lab", id="hooks"):
+                yield Label("Hook Prompt Customization", classes="section-title")
                 yield Static(
-                    "Override the default voice for specific hooks. "
-                    "When set, these hooks will use the specified voice instead of the default.",
+                    "Customize prompts and voice for each hook type. "
+                    "The Stop hook plays before AI summaries; Permission hooks announce tool requests.",
                     classes="info",
                 )
                 yield Static("")
                 for hook_type in HOOK_TYPES:
-                    yield HookVoiceSelector(hook_type, id=f"hook-selector-{hook_type}")
+                    yield HookSettingsWidget(hook_type, id=f"hook-settings-{hook_type}")
             with TabPane("System", id="system"):
                 yield Label("Server Status", classes="section-title")
                 yield ServerStatusWidget(id="server-status")
@@ -1944,7 +2019,7 @@ class MainScreen(Screen):
                     "Use keyboard shortcuts 1-5 to navigate tabs:\n"
                     "  1 - Voice Lab (per-voice audio settings)\n"
                     "  2 - Clone Lab (voice cloning)\n"
-                    "  3 - Hooks (per-hook voice overrides)\n"
+                    "  3 - Prompt Lab (hook prompts and voice)\n"
                     "  4 - System (server status, streaming)\n"
                     "  5 - About (this screen)"
                 )

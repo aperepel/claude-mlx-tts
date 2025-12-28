@@ -528,6 +528,12 @@ def reset_voice_to_defaults(voice_name: str) -> None:
 # Available hook types that can have voice overrides
 HOOK_TYPES = ["stop", "permission_request"]
 
+# Default prompts for each hook type
+HOOK_DEFAULT_PROMPTS = {
+    "stop": "[clear throat] Attention on deck.",
+    "permission_request": "Claude needs permission to run {tool_name}.",
+}
+
 
 def get_hook_voice(hook_type: str) -> str | None:
     """Get the voice override for a specific hook type.
@@ -584,6 +590,104 @@ def get_effective_hook_voice(hook_type: str) -> str:
 def get_all_hook_voices() -> dict[str, str | None]:
     """Get all hook voice overrides."""
     return {hook: get_hook_voice(hook) for hook in HOOK_TYPES}
+
+
+# =============================================================================
+# Per-Hook Prompt Configuration
+# =============================================================================
+
+
+def get_default_hook_prompt(hook_type: str) -> str:
+    """Get the default prompt for a hook type.
+
+    Args:
+        hook_type: The hook type ('stop' or 'permission_request')
+
+    Returns:
+        The default prompt string for the hook type
+
+    Raises:
+        ValueError: If hook_type is not valid
+    """
+    if hook_type not in HOOK_TYPES:
+        raise ValueError(f"Invalid hook type: {hook_type}. Valid: {HOOK_TYPES}")
+    return HOOK_DEFAULT_PROMPTS[hook_type]
+
+
+def get_hook_prompt(hook_type: str) -> str | None:
+    """Get the custom prompt override for a specific hook type.
+
+    Returns None if no custom prompt is set (uses default).
+
+    Args:
+        hook_type: The hook type ('stop' or 'permission_request')
+
+    Returns:
+        Custom prompt string if set, None otherwise
+
+    Raises:
+        ValueError: If hook_type is not valid
+    """
+    if hook_type not in HOOK_TYPES:
+        raise ValueError(f"Invalid hook type: {hook_type}. Valid: {HOOK_TYPES}")
+
+    config = load_config()
+    hooks = config.get("hooks", {})
+    return hooks.get(hook_type, {}).get("prompt")
+
+
+def set_hook_prompt(hook_type: str, prompt: str | None) -> None:
+    """Set the custom prompt for a specific hook type.
+
+    Set prompt to None to clear the custom prompt (use default).
+
+    Args:
+        hook_type: The hook type ('stop' or 'permission_request')
+        prompt: The custom prompt string, or None to clear
+
+    Raises:
+        ValueError: If hook_type is not valid
+    """
+    if hook_type not in HOOK_TYPES:
+        raise ValueError(f"Invalid hook type: {hook_type}. Valid: {HOOK_TYPES}")
+
+    config = load_config()
+    if "hooks" not in config:
+        config["hooks"] = {}
+    if hook_type not in config["hooks"]:
+        config["hooks"][hook_type] = {}
+
+    if prompt is None:
+        # Clear the override
+        config["hooks"][hook_type].pop("prompt", None)
+        # Clean up empty dicts
+        if not config["hooks"][hook_type]:
+            del config["hooks"][hook_type]
+        if not config["hooks"]:
+            del config["hooks"]
+    else:
+        config["hooks"][hook_type]["prompt"] = prompt
+
+    save_config(config)
+
+
+def get_effective_hook_prompt(hook_type: str) -> str:
+    """Get the effective prompt for a hook (custom override or default).
+
+    Args:
+        hook_type: The hook type ('stop' or 'permission_request')
+
+    Returns:
+        The effective prompt string to use
+
+    Raises:
+        ValueError: If hook_type is not valid
+    """
+    if hook_type not in HOOK_TYPES:
+        raise ValueError(f"Invalid hook type: {hook_type}. Valid: {HOOK_TYPES}")
+
+    custom = get_hook_prompt(hook_type)
+    return custom if custom else get_default_hook_prompt(hook_type)
 
 
 # =============================================================================
