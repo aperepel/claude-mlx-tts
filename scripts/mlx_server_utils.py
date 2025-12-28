@@ -32,9 +32,11 @@ import os
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, Generator
 
 import requests
+
+from streaming_wav_parser import StreamingWavParser, WavHeader, WavParseError
 
 log = logging.getLogger(__name__)
 
@@ -321,6 +323,94 @@ def speak_mlx_http(
 
     # All retries failed
     raise last_error or TTSRequestError("TTS request failed after all retries")
+
+
+# =============================================================================
+# Streaming TTS via HTTP
+# =============================================================================
+
+def stream_tts_http(
+    text: str,
+    voice: str | None = None,
+    timeout: int = 60,
+    chunk_size: int = 8192,
+) -> Generator[tuple[WavHeader, "np.ndarray"], None, None]:
+    """
+    Stream TTS audio chunks from the server via HTTP.
+
+    Uses `stream=True` with requests and `iter_content()` to process
+    audio data as it arrives, enabling low-latency playback.
+
+    Auto-starts server if not running.
+
+    Args:
+        text: Text to convert to speech.
+        voice: Voice name to use. If None, server uses active voice from config.
+        timeout: Request timeout in seconds (for first byte).
+        chunk_size: Size of chunks to read from response (default 8192).
+
+    Yields:
+        Tuples of (WavHeader, audio_chunk) where audio_chunk is a float32
+        numpy array. Header is the same object for all yields.
+
+    Raises:
+        ServerStartError: If server fails to start.
+        TTSRequestError: If TTS request fails.
+    """
+    import numpy as np
+
+    if not text or not text.strip():
+        log.warning("Empty text, skipping TTS")
+        return
+
+    ensure_server_running()
+
+    url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
+
+    payload = {
+        "input": text,
+        "model": MLX_MODEL,
+    }
+    if voice:
+        payload["voice"] = voice
+
+    response = None
+    parser = StreamingWavParser()
+
+    try:
+        log.debug(f"Sending streaming TTS request: {text[:50]}...")
+
+        response = requests.post(url, json=payload, timeout=timeout, stream=True)
+
+        if response.status_code != 200:
+            raise TTSRequestError(
+                f"TTS request failed with status {response.status_code}: {response.text}"
+            )
+
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if not chunk:
+                continue
+
+            try:
+                parser.feed(chunk)
+            except WavParseError as e:
+                raise TTSRequestError(f"WAV parsing error: {e}")
+
+            audio = parser.read_audio()
+            if audio is not None and len(audio) > 0:
+                yield (parser.header, audio)
+
+    except requests.exceptions.Timeout as e:
+        raise TTSRequestError(f"TTS request timeout: {e}")
+    except requests.exceptions.RequestException as e:
+        raise TTSRequestError(f"TTS request failed: {e}")
+    except TTSRequestError:
+        raise
+    except Exception as e:
+        raise TTSRequestError(f"Unexpected error during streaming: {e}")
+    finally:
+        if response is not None:
+            response.close()
 
 
 # =============================================================================
