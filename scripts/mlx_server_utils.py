@@ -200,12 +200,14 @@ def ensure_server_running(
 def speak_mlx_http(
     text: str,
     voice: str | None = None,
-    timeout: int = 60
+    timeout: int = 60,
+    max_retries: int = 2
 ) -> None:
     """
     Send TTS request to the server via HTTP.
 
-    Auto-starts server if not running.
+    Auto-starts server if not running. Retries on transient failures like
+    invalid WAV responses (can occur during multi-chunk streaming).
 
     Note: Speed parameter is not supported by Chatterbox model.
     The mlx_audio library explicitly ignores speed for Chatterbox.
@@ -215,10 +217,11 @@ def speak_mlx_http(
         voice: Voice name to use. Passed directly to server API.
                If None, server uses active voice from config.
         timeout: Request timeout in seconds.
+        max_retries: Number of retry attempts for transient failures.
 
     Raises:
         ServerStartError: If server fails to start.
-        TTSRequestError: If TTS request fails.
+        TTSRequestError: If TTS request fails after all retries.
     """
     if not text or not text.strip():
         log.warning("Empty text, skipping TTS")
@@ -227,40 +230,57 @@ def speak_mlx_http(
     # Voice is passed directly in the request payload - no config modification needed
     # This avoids race conditions between concurrent hooks
 
-    try:
-        ensure_server_running()
+    ensure_server_running()
 
-        url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
+    url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
-        # Pass voice directly to server API (mlx_audio server supports 'voice' field)
-        # Server will use this voice, or fall back to active voice from config if None
-        payload = {
-            "input": text,
-            "model": MLX_MODEL,
-            # Note: speed parameter not included - Chatterbox doesn't support it
-        }
-        if voice:
-            payload["voice"] = voice
+    # Pass voice directly to server API (mlx_audio server supports 'voice' field)
+    # Server will use this voice, or fall back to active voice from config if None
+    payload = {
+        "input": text,
+        "model": MLX_MODEL,
+        # Note: speed parameter not included - Chatterbox doesn't support it
+    }
+    if voice:
+        payload["voice"] = voice
 
-        log.debug(f"Sending TTS request: {text[:50]}...")
+    last_error = None
 
-        gen_start = time.time()
-        response = requests.post(url, json=payload, timeout=timeout)
+    for attempt in range(max_retries + 1):
+        try:
+            log.debug(f"Sending TTS request (attempt {attempt + 1}): {text[:50]}...")
 
-        if response.status_code != 200:
-            raise TTSRequestError(
-                f"TTS request failed with status {response.status_code}: {response.text}"
-            )
+            gen_start = time.time()
+            response = requests.post(url, json=payload, timeout=timeout)
 
-        # Play the audio response
-        audio_data = response.content
-        gen_time = time.time() - gen_start
+            if response.status_code != 200:
+                raise TTSRequestError(
+                    f"TTS request failed with status {response.status_code}: {response.text}"
+                )
 
-        if audio_data:
+            # Play the audio response
+            audio_data = response.content
+            gen_time = time.time() - gen_start
+
+            if not audio_data:
+                raise TTSRequestError("Empty audio response from server")
+
             import sounddevice as sd
             import soundfile as sf
             import numpy as np
             import io
+
+            # Validate WAV header before parsing
+            if len(audio_data) < 12 or audio_data[:4] != b'RIFF':
+                # Log diagnostic info for debugging
+                preview = audio_data[:100] if len(audio_data) > 100 else audio_data
+                log.warning(
+                    f"Invalid WAV response (attempt {attempt + 1}): "
+                    f"len={len(audio_data)}, preview={preview!r}"
+                )
+                raise TTSRequestError(
+                    f"Invalid WAV response: missing RIFF header (len={len(audio_data)})"
+                )
 
             # Load audio from response bytes
             audio_buffer = io.BytesIO(audio_data)
@@ -285,8 +305,22 @@ def speak_mlx_http(
             play_time = time.time() - play_start
             log.info(f"Playback: {play_time:.2f}s")
 
-    except requests.exceptions.RequestException as e:
-        raise TTSRequestError(f"TTS request failed: {e}") from e
+            # Success - exit the retry loop
+            return
+
+        except requests.exceptions.RequestException as e:
+            last_error = TTSRequestError(f"TTS request failed: {e}")
+            log.warning(f"Request error (attempt {attempt + 1}): {e}")
+        except TTSRequestError as e:
+            last_error = e
+            if attempt < max_retries:
+                log.warning(f"Retrying after error (attempt {attempt + 1}): {e}")
+                time.sleep(0.5)  # Brief pause before retry
+            else:
+                log.warning(f"All retries exhausted: {e}")
+
+    # All retries failed
+    raise last_error or TTSRequestError("TTS request failed after all retries")
 
 
 # =============================================================================
