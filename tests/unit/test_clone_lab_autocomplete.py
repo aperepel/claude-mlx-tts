@@ -243,3 +243,76 @@ class TestAutocompleteValidation:
 
         # on_input_changed handler should still exist
         assert hasattr(widget, "on_input_changed")
+
+
+# =============================================================================
+# Cache Invalidation Tests (mlx-tts-XXX)
+# =============================================================================
+
+
+class TestCacheInvalidationOnFocus:
+    """Tests for cache invalidation when input gains focus.
+
+    Bug: Directory contents are cached indefinitely, so new files added
+    to a directory don't appear in autocomplete suggestions.
+
+    Fix: Clear cache when input gains focus to pick up filesystem changes.
+    """
+
+    def test_handle_focus_change_method_exists(self):
+        """WavPathAutoComplete should override _handle_focus_change."""
+        from tts_tui import WavPathAutoComplete
+        import inspect
+
+        # Check that the method is defined in WavPathAutoComplete, not just inherited
+        assert "_handle_focus_change" in WavPathAutoComplete.__dict__, \
+            "WavPathAutoComplete must override _handle_focus_change to clear cache"
+
+    def test_cache_cleared_on_focus_gain(self):
+        """Cache should be cleared when input gains focus."""
+        from tts_tui import WavPathAutoComplete
+        from unittest.mock import MagicMock, patch
+
+        # Create instance with mocked target
+        autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
+        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}
+        autocomplete.clear_directory_cache = MagicMock()
+
+        # Mock the parent class's _handle_focus_change
+        with patch.object(WavPathAutoComplete.__bases__[0], '_handle_focus_change'):
+            autocomplete._handle_focus_change(has_focus=True)
+
+        # Cache should be cleared on focus gain
+        autocomplete.clear_directory_cache.assert_called_once()
+
+    def test_cache_not_cleared_on_focus_loss(self):
+        """Cache should NOT be cleared when input loses focus."""
+        from tts_tui import WavPathAutoComplete
+        from unittest.mock import MagicMock, patch
+
+        autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
+        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}
+        autocomplete.clear_directory_cache = MagicMock()
+
+        with patch.object(WavPathAutoComplete.__bases__[0], '_handle_focus_change'):
+            autocomplete._handle_focus_change(has_focus=False)
+
+        # Cache should NOT be cleared on focus loss
+        autocomplete.clear_directory_cache.assert_not_called()
+
+    def test_parent_handle_focus_change_called(self):
+        """Parent _handle_focus_change should always be called."""
+        from tts_tui import WavPathAutoComplete
+        from unittest.mock import MagicMock, patch
+
+        autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
+        autocomplete._directory_cache = {}
+        autocomplete.clear_directory_cache = MagicMock()
+
+        with patch.object(WavPathAutoComplete.__bases__[0], '_handle_focus_change') as mock_parent:
+            autocomplete._handle_focus_change(has_focus=True)
+            mock_parent.assert_called_once_with(has_focus=True)
+
+            mock_parent.reset_mock()
+            autocomplete._handle_focus_change(has_focus=False)
+            mock_parent.assert_called_once_with(has_focus=False)

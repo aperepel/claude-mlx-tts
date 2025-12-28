@@ -147,6 +147,12 @@ class WavPathAutoComplete(PathAutoComplete):
         # Manually post Input.Changed to trigger validation in CloneLabWidget
         self.target.post_message(Input.Changed(self.target, self.target.value))
 
+    def _handle_focus_change(self, has_focus: bool) -> None:
+        """Clear directory cache on focus to pick up filesystem changes."""
+        if has_focus:
+            self.clear_directory_cache()
+        super()._handle_focus_change(has_focus=has_focus)
+
 
 import tts_config
 from tts_config import (
