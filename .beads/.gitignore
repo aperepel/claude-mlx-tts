@@ -1,4 +1,4 @@
-# SQLite databases
+# SQLite databases (local only)
 *.db
 *.db?*
 *.db-journal
@@ -11,14 +11,14 @@ daemon.log
 daemon.pid
 bd.sock
 
-# Local version tracking (prevents upgrade notification spam after git ops)
+# Local version tracking
 .local_version
 
 # Legacy database files
 db.sqlite
 bd.db
 
-# Merge artifacts (temporary files from 3-way merge)
+# Merge artifacts
 beads.base.jsonl
 beads.base.meta.json
 beads.left.jsonl
@@ -26,13 +26,8 @@ beads.left.meta.json
 beads.right.jsonl
 beads.right.meta.json
 
-# JSONL files tracked on beads-sync branch only (via worktree)
-# Do NOT track on main - bd sync handles this
-issues.jsonl
-interactions.jsonl
-metadata.json
-
-# Config lives on beads-sync branch (protected main mode)
-config.yaml
-config.json
-README.md
+# THESE FILES ARE TRACKED ON beads-sync:
+# - issues.jsonl
+# - interactions.jsonl
+# - metadata.json
+# - config.yaml
