@@ -316,3 +316,52 @@ class TestCacheInvalidationOnFocus:
             mock_parent.reset_mock()
             autocomplete._handle_focus_change(has_focus=False)
             mock_parent.assert_called_once_with(has_focus=False)
+
+
+# =============================================================================
+# Voice Test Isolation Tests
+# =============================================================================
+
+
+class TestVoiceTestIsolation:
+    """Tests that testing a cloned voice does NOT modify active voice config.
+
+    Bug: When testing a cloned voice, set_active_voice() was called which
+    permanently changed the global config. Any subsequent TTS (like stop hooks)
+    would use the cloned voice instead of the user's selected voice.
+
+    Fix: Pass --voice flag to TTS script instead of modifying global config.
+    """
+
+    def test_test_voice_does_not_call_set_active_voice(self):
+        """_test_voice must NOT call set_active_voice to avoid config pollution."""
+        from tts_tui import CloneLabWidget
+        import inspect
+
+        source = inspect.getsource(CloneLabWidget._test_voice)
+
+        # The method should NOT contain set_active_voice
+        assert "set_active_voice" not in source, \
+            "_test_voice must not call set_active_voice - use --voice flag instead"
+
+    def test_run_test_worker_passes_voice_flag(self):
+        """_run_test_worker must pass --voice flag to subprocess."""
+        from tts_tui import CloneLabWidget
+        import inspect
+
+        source = inspect.getsource(CloneLabWidget._run_test_worker)
+
+        # The worker should pass --voice to the subprocess
+        assert "--voice" in source, \
+            "_run_test_worker must pass --voice flag to TTS script"
+
+    def test_run_test_worker_uses_cloned_voice_name(self):
+        """_run_test_worker must use self.cloned_voice_name for --voice value."""
+        from tts_tui import CloneLabWidget
+        import inspect
+
+        source = inspect.getsource(CloneLabWidget._run_test_worker)
+
+        # Should reference cloned_voice_name for the voice parameter
+        assert "cloned_voice_name" in source, \
+            "_run_test_worker must use cloned_voice_name for --voice value"

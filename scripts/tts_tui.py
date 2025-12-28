@@ -1921,17 +1921,12 @@ class CloneLabWidget(Container):
         if not phrase:
             return
 
-        # Set active voice to the cloned one and play
-        from tts_config import set_active_voice
-        try:
-            set_active_voice(self.cloned_voice_name)
-        except ValueError:
-            pass
-
-        self._run_test_worker(phrase)
+        # Pass voice name directly to TTS script via --voice flag
+        # This avoids polluting the global config with a temporary test voice
+        self._run_test_worker(phrase, self.cloned_voice_name)
 
     @work(exclusive=True, thread=True)
-    def _run_test_worker(self, phrase: str) -> dict:
+    def _run_test_worker(self, phrase: str, cloned_voice_name: str) -> dict:
         """Background worker for voice testing."""
         import subprocess
         import sys
@@ -1942,7 +1937,7 @@ class CloneLabWidget(Container):
 
         try:
             result = subprocess.run(
-                [sys.executable, tts_script, phrase],
+                [sys.executable, tts_script, phrase, "--voice", cloned_voice_name],
                 capture_output=True,
                 text=True,
                 timeout=60,
