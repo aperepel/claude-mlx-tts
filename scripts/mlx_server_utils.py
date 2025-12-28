@@ -38,6 +38,18 @@ import requests
 
 from streaming_wav_parser import StreamingWavParser, WavHeader, WavParseError
 
+# Import AudioPlayer for streaming playback
+try:
+    from mlx_audio.tts.audio_player import AudioPlayer
+except ImportError:
+    AudioPlayer = None
+
+# Import audio processor for compression
+try:
+    from audio_processor import create_processor
+except ImportError:
+    create_processor = None
+
 log = logging.getLogger(__name__)
 
 # =============================================================================
@@ -399,6 +411,153 @@ def stream_tts_http(
             audio = parser.read_audio()
             if audio is not None and len(audio) > 0:
                 yield (parser.header, audio)
+
+    except requests.exceptions.Timeout as e:
+        raise TTSRequestError(f"TTS request timeout: {e}")
+    except requests.exceptions.RequestException as e:
+        raise TTSRequestError(f"TTS request failed: {e}")
+    except TTSRequestError:
+        raise
+    except Exception as e:
+        raise TTSRequestError(f"Unexpected error during streaming: {e}")
+    finally:
+        if response is not None:
+            response.close()
+
+
+def play_streaming_http(
+    text: str,
+    voice: str | None = None,
+    timeout: int = 60,
+    chunk_size: int = 8192,
+) -> dict[str, float]:
+    """
+    Stream TTS audio from the server and play with AudioPlayer.
+
+    Uses stream_tts_http() to get streaming audio chunks and plays them
+    with low-latency AudioPlayer. Applies stateful audio compression
+    across chunks and captures timing metrics.
+
+    Auto-starts server if not running.
+
+    Args:
+        text: Text to convert to speech.
+        voice: Voice name to use. If None, server uses active voice from config.
+        timeout: Request timeout in seconds (for first byte).
+        chunk_size: Size of chunks to read from response (default 8192).
+
+    Returns:
+        Dict with timing metrics:
+            - ttft: Time to first audio chunk (seconds)
+            - gen_time: Total streaming time (seconds)
+            - play_time: Time waiting for playback drain (seconds)
+            - chunks: Number of audio chunks received
+
+    Raises:
+        ServerStartError: If server fails to start.
+        TTSRequestError: If TTS request fails.
+    """
+    import numpy as np
+
+    # Handle empty text
+    if not text or not text.strip():
+        log.warning("Empty text, skipping TTS")
+        return {
+            "ttft": 0.0,
+            "gen_time": 0.0,
+            "play_time": 0.0,
+            "chunks": 0,
+        }
+
+    ensure_server_running()
+
+    url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
+
+    payload = {
+        "input": text,
+        "model": MLX_MODEL,
+    }
+    if voice:
+        payload["voice"] = voice
+
+    response = None
+    parser = StreamingWavParser()
+    player = None
+    audio_processor = None
+
+    # Metrics tracking
+    gen_start = time.perf_counter()
+    ttft = None
+    chunk_count = 0
+
+    try:
+        log.debug(f"Sending streaming TTS request: {text[:50]}...")
+
+        response = requests.post(url, json=payload, timeout=timeout, stream=True)
+
+        if response.status_code != 200:
+            raise TTSRequestError(
+                f"TTS request failed with status {response.status_code}: {response.text}"
+            )
+
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if not chunk:
+                continue
+
+            try:
+                parser.feed(chunk)
+            except WavParseError as e:
+                raise TTSRequestError(f"WAV parsing error: {e}")
+
+            audio = parser.read_audio()
+            if audio is not None and len(audio) > 0:
+                # Capture TTFT on first audio chunk
+                if ttft is None:
+                    ttft = time.perf_counter() - gen_start
+
+                    # Initialize player with sample rate from header
+                    if AudioPlayer is not None and parser.header is not None:
+                        player = AudioPlayer(sample_rate=parser.header.sample_rate)
+
+                    # Initialize audio processor for compression
+                    if create_processor is not None and parser.header is not None:
+                        audio_processor = create_processor(sample_rate=parser.header.sample_rate)
+                        log.debug("Audio processor initialized for streaming")
+
+                chunk_count += 1
+
+                # Apply audio compression if available
+                if audio_processor is not None:
+                    audio = audio_processor(audio)
+
+                # Queue audio for playback
+                if player is not None:
+                    player.queue_audio(audio)
+
+        gen_time = time.perf_counter() - gen_start
+
+        # Wait for playback to finish
+        play_time = 0.0
+        if player is not None:
+            # Handle short audio that didn't meet the min buffer threshold
+            if not player.playing and player.buffered_samples() > 0:
+                log.debug("Force-starting stream for short audio clip")
+                player.start_stream()
+
+            # Only wait for drain if stream is actually playing
+            if player.playing:
+                play_start = time.perf_counter()
+                player.wait_for_drain()
+                play_time = time.perf_counter() - play_start
+            elif player.buffered_samples() == 0:
+                log.debug("No audio to play, skipping drain wait")
+
+        return {
+            "ttft": ttft or 0.0,
+            "gen_time": gen_time,
+            "play_time": play_time,
+            "chunks": chunk_count,
+        }
 
     except requests.exceptions.Timeout as e:
         raise TTSRequestError(f"TTS request timeout: {e}")
