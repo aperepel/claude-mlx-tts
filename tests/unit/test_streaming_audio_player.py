@@ -464,3 +464,213 @@ class TestEmptyTextHandling:
         metrics = play_streaming_http("   \n\t  ")
 
         assert metrics["chunks"] == 0
+
+
+class TestTotalBytesMetric:
+    """Tests for total_bytes metric (audio data transferred)."""
+
+    def test_returns_total_bytes_in_metrics(self):
+        """Metrics should include total_bytes (audio data transferred)."""
+        from mlx_server_utils import play_streaming_http
+
+        # Create 2400 samples = 4800 bytes (16-bit PCM)
+        audio = np.zeros(2400, dtype=np.float32)
+        wav_bytes = create_wav_bytes(audio)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        mock_player = MagicMock()
+        mock_player.playing = True
+        mock_player.buffered_samples.return_value = 100
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response):
+            with patch("mlx_server_utils.ensure_server_running"):
+                with patch("mlx_server_utils.AudioPlayer", return_value=mock_player):
+                    metrics = play_streaming_http("Test text")
+
+        assert "total_bytes" in metrics
+        assert isinstance(metrics["total_bytes"], int)
+
+    def test_total_bytes_matches_audio_data(self):
+        """total_bytes should match actual audio data size."""
+        from mlx_server_utils import play_streaming_http
+
+        # 2400 samples * 2 bytes/sample = 4800 bytes
+        audio = np.zeros(2400, dtype=np.float32)
+        wav_bytes = create_wav_bytes(audio)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        mock_player = MagicMock()
+        mock_player.playing = True
+        mock_player.buffered_samples.return_value = 100
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response):
+            with patch("mlx_server_utils.ensure_server_running"):
+                with patch("mlx_server_utils.AudioPlayer", return_value=mock_player):
+                    metrics = play_streaming_http("Test text")
+
+        # Should be 4800 bytes (2400 samples * 2 bytes per 16-bit sample)
+        assert metrics["total_bytes"] == 4800
+
+    def test_total_bytes_accumulates_across_chunks(self):
+        """total_bytes should accumulate from all chunks."""
+        from mlx_server_utils import play_streaming_http
+
+        audio = np.zeros(4800, dtype=np.float32)  # 9600 bytes
+        wav_bytes = create_wav_bytes(audio)
+
+        # Split into multiple chunks
+        chunk_size = 256
+        chunks = [wav_bytes[i:i+chunk_size] for i in range(0, len(wav_bytes), chunk_size)]
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter(chunks)
+
+        mock_player = MagicMock()
+        mock_player.playing = True
+        mock_player.buffered_samples.return_value = 100
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response):
+            with patch("mlx_server_utils.ensure_server_running"):
+                with patch("mlx_server_utils.AudioPlayer", return_value=mock_player):
+                    metrics = play_streaming_http("Test text")
+
+        # 4800 samples * 2 bytes = 9600 bytes
+        assert metrics["total_bytes"] == 9600
+
+
+class TestAudioDurationMetric:
+    """Tests for audio_duration metric (total audio time)."""
+
+    def test_returns_audio_duration_in_metrics(self):
+        """Metrics should include audio_duration (seconds)."""
+        from mlx_server_utils import play_streaming_http
+
+        audio = np.zeros(24000, dtype=np.float32)  # 1 second at 24kHz
+        wav_bytes = create_wav_bytes(audio, sample_rate=24000)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        mock_player = MagicMock()
+        mock_player.playing = True
+        mock_player.buffered_samples.return_value = 100
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response):
+            with patch("mlx_server_utils.ensure_server_running"):
+                with patch("mlx_server_utils.AudioPlayer", return_value=mock_player):
+                    metrics = play_streaming_http("Test text")
+
+        assert "audio_duration" in metrics
+        assert isinstance(metrics["audio_duration"], float)
+
+    def test_audio_duration_calculated_correctly(self):
+        """audio_duration should be samples / sample_rate."""
+        from mlx_server_utils import play_streaming_http
+
+        # 24000 samples at 24kHz = 1.0 second
+        audio = np.zeros(24000, dtype=np.float32)
+        wav_bytes = create_wav_bytes(audio, sample_rate=24000)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        mock_player = MagicMock()
+        mock_player.playing = True
+        mock_player.buffered_samples.return_value = 100
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response):
+            with patch("mlx_server_utils.ensure_server_running"):
+                with patch("mlx_server_utils.AudioPlayer", return_value=mock_player):
+                    metrics = play_streaming_http("Test text")
+
+        assert abs(metrics["audio_duration"] - 1.0) < 0.01
+
+
+class TestRTFMetric:
+    """Tests for RTF (real-time factor) metric."""
+
+    def test_returns_rtf_in_metrics(self):
+        """Metrics should include rtf (real-time factor)."""
+        from mlx_server_utils import play_streaming_http
+
+        audio = np.zeros(24000, dtype=np.float32)  # 1 second audio
+        wav_bytes = create_wav_bytes(audio, sample_rate=24000)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        mock_player = MagicMock()
+        mock_player.playing = True
+        mock_player.buffered_samples.return_value = 100
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response):
+            with patch("mlx_server_utils.ensure_server_running"):
+                with patch("mlx_server_utils.AudioPlayer", return_value=mock_player):
+                    metrics = play_streaming_http("Test text")
+
+        assert "rtf" in metrics
+        assert isinstance(metrics["rtf"], float)
+
+    def test_rtf_is_gen_time_over_audio_duration(self):
+        """RTF should be gen_time / audio_duration."""
+        from mlx_server_utils import play_streaming_http
+
+        audio = np.zeros(24000, dtype=np.float32)  # 1 second audio
+        wav_bytes = create_wav_bytes(audio, sample_rate=24000)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        mock_player = MagicMock()
+        mock_player.playing = True
+        mock_player.buffered_samples.return_value = 100
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response):
+            with patch("mlx_server_utils.ensure_server_running"):
+                with patch("mlx_server_utils.AudioPlayer", return_value=mock_player):
+                    metrics = play_streaming_http("Test text")
+
+        # RTF = gen_time / audio_duration
+        if metrics["audio_duration"] > 0:
+            expected_rtf = metrics["gen_time"] / metrics["audio_duration"]
+            assert abs(metrics["rtf"] - expected_rtf) < 0.01
+
+    def test_rtf_zero_when_no_audio_duration(self):
+        """RTF should be 0 when audio_duration is 0."""
+        from mlx_server_utils import play_streaming_http
+
+        # Empty audio
+        metrics = play_streaming_http("")
+
+        assert metrics["rtf"] == 0.0
+
+
+class TestEmptyTextNewMetrics:
+    """Tests for empty text handling with new metrics."""
+
+    def test_empty_text_has_zero_total_bytes(self):
+        """Empty text should have zero total_bytes."""
+        from mlx_server_utils import play_streaming_http
+
+        metrics = play_streaming_http("")
+
+        assert metrics["total_bytes"] == 0
+
+    def test_empty_text_has_zero_audio_duration(self):
+        """Empty text should have zero audio_duration."""
+        from mlx_server_utils import play_streaming_http
+
+        metrics = play_streaming_http("")
+
+        assert metrics["audio_duration"] == 0.0

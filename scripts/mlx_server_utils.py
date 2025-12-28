@@ -452,6 +452,9 @@ def play_streaming_http(
             - gen_time: Total streaming time (seconds)
             - play_time: Time waiting for playback drain (seconds)
             - chunks: Number of audio chunks received
+            - total_bytes: Total audio data transferred (bytes)
+            - audio_duration: Total audio duration (seconds)
+            - rtf: Real-time factor (gen_time / audio_duration)
 
     Raises:
         ServerStartError: If server fails to start.
@@ -467,6 +470,9 @@ def play_streaming_http(
             "gen_time": 0.0,
             "play_time": 0.0,
             "chunks": 0,
+            "total_bytes": 0,
+            "audio_duration": 0.0,
+            "rtf": 0.0,
         }
 
     ensure_server_running()
@@ -489,6 +495,9 @@ def play_streaming_http(
     gen_start = time.perf_counter()
     ttft = None
     chunk_count = 0
+    total_samples = 0
+    sample_rate = 0
+    bits_per_sample = 16  # Default for Chatterbox model
 
     try:
         log.debug(f"Sending streaming TTS request: {text[:50]}...")
@@ -515,6 +524,11 @@ def play_streaming_http(
                 if ttft is None:
                     ttft = time.perf_counter() - gen_start
 
+                    # Capture audio format from header for metrics
+                    if parser.header is not None:
+                        sample_rate = parser.header.sample_rate
+                        bits_per_sample = parser.header.bits_per_sample
+
                     # Initialize player with sample rate from header
                     if AudioPlayer is not None and parser.header is not None:
                         player = AudioPlayer(sample_rate=parser.header.sample_rate)
@@ -525,6 +539,7 @@ def play_streaming_http(
                         log.debug("Audio processor initialized for streaming")
 
                 chunk_count += 1
+                total_samples += len(audio)
 
                 # Apply audio compression if available
                 if audio_processor is not None:
@@ -552,11 +567,20 @@ def play_streaming_http(
             elif player.buffered_samples() == 0:
                 log.debug("No audio to play, skipping drain wait")
 
+        # Calculate derived metrics
+        bytes_per_sample = bits_per_sample // 8
+        total_bytes = total_samples * bytes_per_sample
+        audio_duration = total_samples / sample_rate if sample_rate > 0 else 0.0
+        rtf = gen_time / audio_duration if audio_duration > 0 else 0.0
+
         return {
             "ttft": ttft or 0.0,
             "gen_time": gen_time,
             "play_time": play_time,
             "chunks": chunk_count,
+            "total_bytes": total_bytes,
+            "audio_duration": audio_duration,
+            "rtf": rtf,
         }
 
     except requests.exceptions.Timeout as e:
