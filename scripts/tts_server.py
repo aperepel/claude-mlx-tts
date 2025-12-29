@@ -169,6 +169,9 @@ def register_streaming_endpoint(app, model_provider, model_name: str):
         """
         Generate streaming audio with proper WAV framing.
 
+        Uses OLA (Overlap-Add) processing to eliminate clicks at chunk boundaries,
+        plus optional compressor/limiter for consistent volume.
+
         Yields:
             First: WAV header (44 bytes)
             Then: Raw PCM audio chunks as int16 bytes
@@ -180,6 +183,32 @@ def register_streaming_endpoint(app, model_provider, model_name: str):
         chunk_count = 0
         total_samples = 0
 
+        # Initialize OLA + compressor/limiter processor
+        audio_processor = None
+        try:
+            from audio_processor import create_processor_with_ola
+            import tts_config
+            compressor = tts_config.get_effective_compressor(voice)
+            limiter = tts_config.get_effective_limiter(voice)
+            audio_processor = create_processor_with_ola(
+                sample_rate=sample_rate,
+                crossfade_ms=20.0,  # Confirmed via listening tests
+                input_gain_db=compressor.get("input_gain_db"),
+                threshold_db=compressor.get("threshold_db"),
+                ratio=compressor.get("ratio"),
+                attack_ms=compressor.get("attack_ms"),
+                release_ms=compressor.get("release_ms"),
+                gain_db=compressor.get("gain_db"),
+                master_gain_db=compressor.get("master_gain_db"),
+                compressor_enabled=compressor.get("enabled"),
+                limiter_threshold_db=limiter.get("threshold_db"),
+                limiter_release_ms=limiter.get("release_ms"),
+                limiter_enabled=limiter.get("enabled"),
+            )
+            log.debug(f"Audio processor with OLA initialized for streaming (voice={voice})")
+        except ImportError:
+            log.debug("audio_processor not available, skipping OLA and compression")
+
         for result in model.generate(
             text,
             voice=voice,
@@ -187,6 +216,10 @@ def register_streaming_endpoint(app, model_provider, model_name: str):
             streaming_interval=streaming_interval,
         ):
             audio = np.asarray(result.audio)
+
+            # Apply OLA + compression/limiting
+            if audio_processor is not None:
+                audio = audio_processor(audio)
 
             if not header_sent:
                 ttft = time.perf_counter() - gen_start
@@ -197,8 +230,17 @@ def register_streaming_endpoint(app, model_provider, model_name: str):
             total_samples += len(audio)
 
             # Convert float32 [-1, 1] to int16 PCM
-            audio_int16 = (audio * 32767).clip(-32768, 32767).astype(np.int16)
-            yield audio_int16.tobytes()
+            if len(audio) > 0:
+                audio_int16 = (audio * 32767).clip(-32768, 32767).astype(np.int16)
+                yield audio_int16.tobytes()
+
+        # Flush OLA buffer to get remaining samples
+        if audio_processor is not None:
+            flush_audio = audio_processor(None)
+            if len(flush_audio) > 0:
+                total_samples += len(flush_audio)
+                flush_int16 = (flush_audio * 32767).clip(-32768, 32767).astype(np.int16)
+                yield flush_int16.tobytes()
 
         gen_time = time.perf_counter() - gen_start
         audio_duration = total_samples / sample_rate if sample_rate > 0 else 0

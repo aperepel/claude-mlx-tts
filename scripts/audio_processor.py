@@ -18,6 +18,7 @@ Usage:
     from audio_processor import process_chunk
     processed = process_chunk(audio, sample_rate=24000)
 """
+import os
 import numpy as np
 from typing import Callable
 
@@ -35,6 +36,9 @@ DEFAULT_GAIN_DB = 8
 DEFAULT_MASTER_GAIN_DB = 0.0
 
 DEFAULT_ENABLED = True
+
+# OLA (Overlap-Add) defaults
+DEFAULT_CROSSFADE_MS = 20.0  # Crossfade duration in milliseconds
 
 
 def get_compressor_config() -> dict:
@@ -151,8 +155,25 @@ def create_processor(
 
     board = Pedalboard(chain)
 
+    # State for smooth chunk stitching
+    # The model's streaming output has discontinuities at chunk boundaries
+    # We fix this by interpolating from the previous chunk's last sample
+    # Larger window = gentler correction = less audible artifacts
+    # Configurable via TTS_INTERP_MS env var for experimentation
+    INTERP_MS = float(os.environ.get("TTS_INTERP_MS", "20.0"))
+    interp_samples = max(4, int(sample_rate * INTERP_MS / 1000))
+    state = {"prev_last": None}
+
+    # Pre-compute the correction curve (raised cosine for smooth transition)
+    interp_curve = np.cos(np.linspace(0, np.pi / 2, interp_samples, dtype=np.float32)) ** 2
+
     def processor(audio: np.ndarray) -> np.ndarray:
-        """Process an audio chunk, maintaining state across calls."""
+        """Process an audio chunk, maintaining state across calls.
+
+        Fixes discontinuities from the model's streaming output by
+        interpolating the first few samples to connect smoothly with
+        the previous chunk.
+        """
         # Skip processing entirely if both are disabled
         if not comp_enabled and not lim_enabled:
             return audio
@@ -166,6 +187,17 @@ def create_processor(
 
         # Ensure float32 for pedalboard
         audio_f32 = audio.astype(np.float32) if audio.dtype != np.float32 else audio
+
+        # Fix chunk boundary discontinuities BEFORE compression
+        # The model's streaming output has discontinuities that we smooth here
+        if state["prev_last"] is not None and len(audio_f32) >= interp_samples:
+            disc = audio_f32[0] - state["prev_last"]
+            audio_f32 = audio_f32.copy()  # Don't modify input
+            audio_f32[:interp_samples] -= disc * interp_curve
+
+        # Store last sample of INPUT for next chunk's interpolation
+        if len(audio_f32) > 0:
+            state["prev_last"] = float(audio_f32[-1])
 
         # pedalboard expects shape (channels, samples) or (samples,) for mono
         # MLX TTS outputs mono as (samples,), need to reshape for pedalboard
@@ -246,3 +278,207 @@ def process_chunk(
     )
 
     return processor(audio)
+
+
+def create_ola_processor(
+    sample_rate: int,
+    crossfade_ms: float | None = None,
+) -> Callable[[np.ndarray | None], np.ndarray]:
+    """
+    Create an Overlap-Add (OLA) processor for seamless audio chunk stitching.
+
+    This processor eliminates clicks and discontinuities at chunk boundaries
+    by applying Hann-windowed crossfades between consecutive chunks.
+
+    Signal flow:
+    1. First chunk: output all but crossfade_samples, save windowed tail
+    2. Subsequent chunks: crossfade head with saved tail, output, save new tail
+    3. Flush (None input): output remaining windowed tail
+
+    The Hann window ensures that fade_out + fade_in = 1.0 at all points,
+    preserving signal amplitude while smoothing discontinuities.
+
+    Args:
+        sample_rate: Audio sample rate in Hz.
+        crossfade_ms: Crossfade duration in milliseconds (default 20ms).
+
+    Returns:
+        Callable that processes audio chunks with OLA. Pass None to flush
+        the remaining buffered samples.
+    """
+    cf_ms = crossfade_ms if crossfade_ms is not None else DEFAULT_CROSSFADE_MS
+    crossfade_samples = max(1, int(sample_rate * cf_ms / 1000))
+
+    # Create Hann windows for crossfade (these sum to 1.0 at all points)
+    # fade_out: 1.0 -> 0.0 (cosine squared curve)
+    # fade_in: 0.0 -> 1.0 (sine squared curve)
+    t = np.linspace(0, np.pi / 2, crossfade_samples, dtype=np.float32)
+    fade_out = np.cos(t) ** 2
+    fade_in = np.sin(t) ** 2
+
+    # State: buffered tail from previous chunk (already faded out)
+    state = {"tail": None, "tail_unfaded": None}
+
+    def processor(audio: np.ndarray | None) -> np.ndarray:
+        """Process an audio chunk with OLA, or flush if None."""
+        # Flush: return remaining buffer with fade-out to silence
+        if audio is None:
+            if state["tail"] is not None:
+                # Return the faded tail - it already has fade-out applied
+                # This ensures audio ends smoothly at silence
+                result = state["tail"].copy()
+                state["tail"] = None
+                state["tail_unfaded"] = None
+                return result
+            return np.array([], dtype=np.float32)
+
+        # Handle empty input
+        if len(audio) == 0:
+            return np.array([], dtype=np.float32)
+
+        # Handle MLX arrays
+        if hasattr(audio, '__module__') and 'mlx' in str(getattr(audio, '__module__', '')):
+            audio = np.array(audio)
+
+        # Ensure float32
+        audio_f32 = audio.astype(np.float32) if audio.dtype != np.float32 else audio
+
+        # Handle chunks smaller than crossfade region
+        if len(audio_f32) < crossfade_samples:
+            # Buffer small chunks until we have enough
+            if state["tail_unfaded"] is not None:
+                # Append to existing buffer
+                combined = np.concatenate([state["tail_unfaded"], audio_f32])
+                if len(combined) < crossfade_samples:
+                    state["tail_unfaded"] = combined
+                    state["tail"] = None  # Will recompute when we have enough
+                    return np.array([], dtype=np.float32)
+                else:
+                    # Now have enough - treat combined as the new chunk
+                    audio_f32 = combined
+                    state["tail"] = None
+                    state["tail_unfaded"] = None
+            else:
+                # First small chunk - just buffer it
+                state["tail_unfaded"] = audio_f32.copy()
+                return np.array([], dtype=np.float32)
+
+        # Split current chunk into head, middle, and tail
+        head = audio_f32[:crossfade_samples]
+        if len(audio_f32) > crossfade_samples:
+            middle = audio_f32[crossfade_samples:-crossfade_samples] if len(audio_f32) > 2 * crossfade_samples else np.array([], dtype=np.float32)
+            tail = audio_f32[-crossfade_samples:]
+        else:
+            middle = np.array([], dtype=np.float32)
+            tail = head  # Chunk is exactly crossfade_samples
+
+        # Apply fade-in to head
+        faded_head = head * fade_in
+
+        # Apply fade-out to tail and save for next chunk
+        faded_tail = tail * fade_out
+        tail_unfaded = tail.copy()
+
+        if state["tail"] is None:
+            # First chunk: apply fade-in to head (from silence), output head + middle
+            # This prevents clicks at the very start of audio
+            if len(audio_f32) > crossfade_samples:
+                output = np.concatenate([faded_head, middle])
+            else:
+                # Chunk is exactly crossfade_samples - just fade in
+                output = faded_head
+            state["tail"] = faded_tail
+            state["tail_unfaded"] = tail_unfaded
+            return output.astype(np.float32)
+
+        # Crossfade: previous faded tail + current faded head
+        crossfade = state["tail"] + faded_head
+
+        # Output: crossfade region + middle
+        if len(middle) > 0:
+            output = np.concatenate([crossfade, middle])
+        else:
+            output = crossfade
+
+        # Save new tail for next chunk
+        state["tail"] = faded_tail
+        state["tail_unfaded"] = tail_unfaded
+
+        return output.astype(np.float32)
+
+    return processor
+
+
+def create_processor_with_ola(
+    sample_rate: int,
+    crossfade_ms: float | None = None,
+    input_gain_db: float | None = None,
+    threshold_db: float | None = None,
+    ratio: float | None = None,
+    attack_ms: float | None = None,
+    release_ms: float | None = None,
+    limiter_threshold_db: float | None = None,
+    limiter_release_ms: float | None = None,
+    gain_db: float | None = None,
+    master_gain_db: float | None = None,
+    compressor_enabled: bool | None = None,
+    limiter_enabled: bool | None = None,
+) -> Callable[[np.ndarray | None], np.ndarray]:
+    """
+    Create a combined OLA + compressor/limiter processor.
+
+    Signal chain: OLA Crossfade → Input Gain → Compressor → Makeup Gain → Limiter → Master Gain
+
+    The OLA stage smooths chunk boundaries before compression, which prevents
+    the compressor from reacting to artificial discontinuities.
+
+    Args:
+        sample_rate: Audio sample rate in Hz.
+        crossfade_ms: OLA crossfade duration in milliseconds (default 20ms).
+        input_gain_db: Input gain in dB before compressor (default 0).
+        threshold_db: Compressor threshold in dB (default -18).
+        ratio: Compression ratio (default 3.0).
+        attack_ms: Compressor attack time in ms (default 3).
+        release_ms: Compressor release time in ms (default 50).
+        limiter_threshold_db: Limiter threshold in dB (default -0.5).
+        limiter_release_ms: Limiter release time in ms (default 40).
+        gain_db: Makeup gain in dB (default 8).
+        master_gain_db: Master gain in dB after limiter (default 0).
+        compressor_enabled: Whether compressor is enabled (reads from config if None).
+        limiter_enabled: Whether limiter is enabled (reads from config if None).
+
+    Returns:
+        Callable that processes audio chunks with OLA + dynamics processing.
+        Pass None to flush the OLA buffer.
+    """
+    # Create OLA processor
+    ola = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+    # Create compressor/limiter processor
+    dynamics = create_processor(
+        sample_rate=sample_rate,
+        input_gain_db=input_gain_db,
+        threshold_db=threshold_db,
+        ratio=ratio,
+        attack_ms=attack_ms,
+        release_ms=release_ms,
+        limiter_threshold_db=limiter_threshold_db,
+        limiter_release_ms=limiter_release_ms,
+        gain_db=gain_db,
+        master_gain_db=master_gain_db,
+        compressor_enabled=compressor_enabled,
+        limiter_enabled=limiter_enabled,
+    )
+
+    def combined_processor(audio: np.ndarray | None) -> np.ndarray:
+        """Process audio with OLA then dynamics."""
+        # OLA stage (handles None for flush)
+        smoothed = ola(audio)
+
+        # Dynamics stage (skip if empty)
+        if len(smoothed) == 0:
+            return smoothed
+
+        return dynamics(smoothed)
+
+    return combined_processor

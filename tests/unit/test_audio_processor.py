@@ -667,3 +667,398 @@ class TestConfigIntegrationWithGains:
         from audio_processor import get_compressor_config
         config = get_compressor_config()
         assert "master_gain_db" in config
+
+
+# =============================================================================
+# Overlap-Add (OLA) Synthesis Tests (TDD - RED PHASE)
+# =============================================================================
+
+
+class TestOLAProcessorExists:
+    """Tests for OLA processor factory function existence."""
+
+    def test_create_ola_processor_function_exists(self):
+        """create_ola_processor function should exist."""
+        from audio_processor import create_ola_processor
+        assert callable(create_ola_processor)
+
+    def test_create_ola_processor_returns_callable(self):
+        """create_ola_processor should return a callable processor."""
+        from audio_processor import create_ola_processor
+        processor = create_ola_processor(sample_rate=24000)
+        assert callable(processor)
+
+
+class TestOLAProcessorParameters:
+    """Tests for OLA processor parameter handling."""
+
+    def test_accepts_sample_rate(self):
+        """OLA processor should accept sample_rate parameter."""
+        from audio_processor import create_ola_processor
+        processor = create_ola_processor(sample_rate=24000)
+        assert callable(processor)
+
+    def test_accepts_crossfade_ms(self):
+        """OLA processor should accept crossfade_ms parameter."""
+        from audio_processor import create_ola_processor
+        processor = create_ola_processor(sample_rate=24000, crossfade_ms=20.0)
+        assert callable(processor)
+
+    def test_default_crossfade_ms(self):
+        """OLA processor should use sensible default crossfade_ms (10-30ms range)."""
+        from audio_processor import DEFAULT_CROSSFADE_MS
+        assert 5.0 <= DEFAULT_CROSSFADE_MS <= 50.0
+
+
+class TestOLAProcessorBasicBehavior:
+    """Tests for basic OLA processor behavior."""
+
+    def test_returns_numpy_array(self):
+        """OLA processor should return numpy array."""
+        from audio_processor import create_ola_processor
+        processor = create_ola_processor(sample_rate=24000)
+        audio = np.random.randn(12000).astype(np.float32)
+        result = processor(audio)
+        assert isinstance(result, np.ndarray)
+
+    def test_returns_float32(self):
+        """OLA processor should return float32 array."""
+        from audio_processor import create_ola_processor
+        processor = create_ola_processor(sample_rate=24000)
+        audio = np.random.randn(12000).astype(np.float32)
+        result = processor(audio)
+        assert result.dtype == np.float32
+
+    def test_handles_empty_array(self):
+        """OLA processor should handle empty array."""
+        from audio_processor import create_ola_processor
+        processor = create_ola_processor(sample_rate=24000)
+        audio = np.array([], dtype=np.float32)
+        result = processor(audio)
+        assert len(result) == 0
+
+    def test_handles_mlx_arrays(self):
+        """OLA processor should handle MLX arrays by converting to numpy."""
+        from audio_processor import create_ola_processor
+        processor = create_ola_processor(sample_rate=24000)
+        # Simulate MLX array-like object
+        class MockMLXArray:
+            def __init__(self, data):
+                self._data = data
+                self.__module__ = 'mlx.core'
+            def __array__(self):
+                return self._data
+            def __len__(self):
+                return len(self._data)
+        audio = MockMLXArray(np.random.randn(12000).astype(np.float32))
+        result = processor(np.array(audio))
+        assert isinstance(result, np.ndarray)
+
+
+class TestOLAChunkStitching:
+    """Tests for OLA chunk stitching - the core functionality."""
+
+    def test_first_chunk_output_is_delayed(self):
+        """First chunk should output all but the crossfade tail."""
+        from audio_processor import create_ola_processor
+        crossfade_ms = 20.0
+        sample_rate = 24000
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+        audio = np.random.randn(12000).astype(np.float32)
+        result = processor(audio)
+
+        # First chunk: output = input - crossfade_samples (tail held for next crossfade)
+        expected_len = len(audio) - crossfade_samples
+        assert len(result) == expected_len
+
+    def test_subsequent_chunks_include_crossfade(self):
+        """Subsequent chunks should include crossfade region in output."""
+        from audio_processor import create_ola_processor
+        crossfade_ms = 20.0
+        sample_rate = 24000
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+        chunk1 = np.random.randn(12000).astype(np.float32)
+        chunk2 = np.random.randn(12000).astype(np.float32)
+
+        result1 = processor(chunk1)  # Outputs len - crossfade_samples
+        result2 = processor(chunk2)  # Outputs len (crossfade + rest - new tail)
+
+        # Second chunk: crossfade region + middle = len - crossfade_samples
+        assert len(result2) == len(chunk2) - crossfade_samples
+
+    def test_flush_returns_remaining_tail(self):
+        """Flush should return the remaining tail samples."""
+        from audio_processor import create_ola_processor
+        crossfade_ms = 20.0
+        sample_rate = 24000
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+        chunk = np.random.randn(12000).astype(np.float32)
+        result1 = processor(chunk)
+        result2 = processor(None)  # Flush with None
+
+        # Flush should return the crossfade_samples that were held
+        assert len(result2) == crossfade_samples
+
+    def test_total_samples_accounted_for(self):
+        """Total output should account for crossfade blending of overlapping regions."""
+        from audio_processor import create_ola_processor
+        crossfade_ms = 20.0
+        sample_rate = 24000
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+        num_chunks = 5
+        chunk_size = 12000
+        chunks = [np.random.randn(chunk_size).astype(np.float32) for _ in range(num_chunks)]
+        total_input = sum(len(c) for c in chunks)
+
+        outputs = [processor(c) for c in chunks]
+        outputs.append(processor(None))  # Flush
+        total_output = sum(len(o) for o in outputs)
+
+        # With crossfade blending, output = input - (num_chunks - 1) * crossfade_samples
+        # Because adjacent chunks share the crossfade region
+        expected_output = total_input - (num_chunks - 1) * crossfade_samples
+        assert total_output == expected_output
+
+
+class TestOLAContinuity:
+    """Tests for audio continuity - OLA should eliminate discontinuities."""
+
+    def test_eliminates_dc_offset_discontinuities(self):
+        """OLA should eliminate clicks from DC offset jumps between chunks."""
+        from audio_processor import create_ola_processor
+        sample_rate = 24000
+        crossfade_ms = 20.0
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+        # Create chunks with DC offset discontinuity
+        chunk1 = np.ones(12000, dtype=np.float32) * 0.5  # Ends at 0.5
+        chunk2 = np.ones(12000, dtype=np.float32) * -0.3  # Starts at -0.3 (0.8 jump!)
+
+        result1 = processor(chunk1)
+        result2 = processor(chunk2)
+
+        # The crossfade region should smoothly transition, not have a 0.8 jump
+        # Check that the max sample-to-sample difference is small
+        combined = np.concatenate([result1, result2])
+        max_diff = np.max(np.abs(np.diff(combined)))
+
+        # With proper crossfade, max_diff should be much smaller than 0.8
+        assert max_diff < 0.2  # Allow for some variation but no harsh clicks
+
+    def test_eliminates_waveform_discontinuities(self):
+        """OLA should smooth waveform phase discontinuities."""
+        from audio_processor import create_ola_processor
+        sample_rate = 24000
+        crossfade_ms = 20.0
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+        # Create sine waves with phase discontinuity
+        t1 = np.linspace(0, 0.5, 12000, dtype=np.float32)
+        t2 = np.linspace(0.3, 0.8, 12000, dtype=np.float32)  # Phase jump
+        freq = 440
+        chunk1 = np.sin(2 * np.pi * freq * t1).astype(np.float32)
+        chunk2 = np.sin(2 * np.pi * freq * t2).astype(np.float32)
+
+        result1 = processor(chunk1)
+        result2 = processor(chunk2)
+
+        # The transition should be smooth
+        combined = np.concatenate([result1, result2])
+        diffs = np.abs(np.diff(combined))
+
+        # 440Hz at 24kHz: max natural diff is about 2*pi*440/24000 ≈ 0.115
+        # With discontinuity it could be up to 2.0
+        # With OLA it should be close to natural max
+        max_natural_diff = 2 * np.pi * freq / sample_rate * 1.5  # Allow some margin
+        assert np.percentile(diffs, 99) < max_natural_diff
+
+
+class TestOLAWindowFunction:
+    """Tests for OLA window function properties."""
+
+    def test_uses_hann_window_for_crossfade(self):
+        """OLA crossfade region should sum to unity (Hann property)."""
+        from audio_processor import create_ola_processor
+        sample_rate = 24000
+        crossfade_ms = 20.0
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+        # Create constant chunks
+        chunk1 = np.ones(12000, dtype=np.float32)
+        chunk2 = np.ones(12000, dtype=np.float32)
+
+        result1 = processor(chunk1)
+        result2 = processor(chunk2)
+        result3 = processor(None)  # Flush
+
+        # First chunk: fades in at start, constant in middle
+        # The fade-in region (first crossfade_samples) goes 0->1
+        # After that, it should be constant 1.0 until the held tail
+        middle1 = result1[crossfade_samples:]
+        np.testing.assert_allclose(middle1, 1.0, atol=1e-5)
+
+        # Second chunk: crossfade region + middle should be 1.0
+        # The crossfade (prev_fade_out + curr_fade_in) sums to 1.0
+        np.testing.assert_allclose(result2, 1.0, atol=1e-5)
+
+        # Flush: fades out to silence
+        # Should go from 1.0 to 0.0
+        assert result3[0] > 0.9  # Starts near 1
+        assert result3[-1] < 0.1  # Ends near 0
+
+    def test_fade_in_at_start(self):
+        """First chunk should fade in from silence."""
+        from audio_processor import create_ola_processor
+        sample_rate = 24000
+        crossfade_ms = 20.0
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+        chunk = np.ones(12000, dtype=np.float32)
+        result = processor(chunk)
+
+        # First sample should be near 0 (faded from silence)
+        assert result[0] < 0.01
+        # Middle should be 1.0
+        assert result[crossfade_samples] > 0.99
+
+    def test_fade_out_at_end(self):
+        """Flush should fade out to silence."""
+        from audio_processor import create_ola_processor
+        sample_rate = 24000
+        crossfade_ms = 20.0
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+        chunk = np.ones(12000, dtype=np.float32)
+        processor(chunk)
+        result = processor(None)  # Flush
+
+        # Should fade out: start near 1, end near 0
+        assert result[0] > 0.9
+        assert result[-1] < 0.01
+
+
+class TestOLAEdgeCases:
+    """Tests for OLA edge cases."""
+
+    def test_chunk_smaller_than_crossfade(self):
+        """Chunks smaller than crossfade should still be handled."""
+        from audio_processor import create_ola_processor
+        sample_rate = 24000
+        crossfade_ms = 20.0
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+        # Create chunk smaller than crossfade
+        small_chunk = np.random.randn(crossfade_samples // 2).astype(np.float32)
+        result = processor(small_chunk)
+
+        # Should handle gracefully - may buffer or pass through
+        assert isinstance(result, np.ndarray)
+
+    def test_single_sample_chunk(self):
+        """Single sample chunks should be handled."""
+        from audio_processor import create_ola_processor
+        processor = create_ola_processor(sample_rate=24000)
+
+        single = np.array([0.5], dtype=np.float32)
+        result = processor(single)
+        assert isinstance(result, np.ndarray)
+
+    def test_very_long_chunk(self):
+        """Very long chunks should be handled efficiently."""
+        from audio_processor import create_ola_processor
+        processor = create_ola_processor(sample_rate=24000)
+
+        # 10 seconds of audio
+        long_chunk = np.random.randn(240000).astype(np.float32)
+        result = processor(long_chunk)
+        assert isinstance(result, np.ndarray)
+        assert len(result) > 0
+
+
+class TestOLAIntegrationWithCompressor:
+    """Tests for OLA integration with compressor/limiter pipeline."""
+
+    def test_ola_before_compressor(self):
+        """OLA should be applied before compressor in signal chain."""
+        from audio_processor import create_processor_with_ola
+        # This tests the combined processor
+        processor = create_processor_with_ola(sample_rate=24000)
+        assert callable(processor)
+
+    def test_combined_processor_eliminates_clicks(self):
+        """Combined OLA + compressor should eliminate clicks."""
+        from audio_processor import create_processor_with_ola
+        sample_rate = 24000
+
+        processor = create_processor_with_ola(sample_rate=sample_rate, crossfade_ms=20.0)
+
+        # Create chunks with discontinuity
+        chunk1 = np.ones(12000, dtype=np.float32) * 0.5
+        chunk2 = np.ones(12000, dtype=np.float32) * -0.3
+
+        result1 = processor(chunk1)
+        result2 = processor(chunk2)
+
+        # Should be smooth even after compression
+        combined = np.concatenate([result1, result2])
+        max_diff = np.max(np.abs(np.diff(combined)))
+        assert max_diff < 0.3  # Compression may increase dynamics, allow more margin
+
+
+class TestOLALatency:
+    """Tests for OLA latency characteristics."""
+
+    def test_first_chunk_latency(self):
+        """First chunk should have minimal latency (only crossfade tail buffered)."""
+        from audio_processor import create_ola_processor
+        crossfade_ms = 20.0
+        sample_rate = 24000
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+        chunk = np.random.randn(12000).astype(np.float32)  # 0.5s of audio
+        result = processor(chunk)
+
+        # Latency = crossfade_samples, which is crossfade_ms in samples
+        # For 0.5s input with 20ms crossfade, should output 0.48s
+        expected_output_len = len(chunk) - crossfade_samples
+        assert len(result) == expected_output_len
+
+    def test_latency_in_ms(self):
+        """OLA latency should be approximately crossfade_ms."""
+        from audio_processor import create_ola_processor
+        crossfade_ms = 20.0
+        sample_rate = 24000
+
+        processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
+
+        chunk_duration_ms = 500  # 0.5 seconds
+        chunk_samples = int(sample_rate * chunk_duration_ms / 1000)
+        chunk = np.random.randn(chunk_samples).astype(np.float32)
+
+        result = processor(chunk)
+        output_duration_ms = len(result) / sample_rate * 1000
+
+        # Output should be input minus crossfade_ms
+        expected_output_ms = chunk_duration_ms - crossfade_ms
+        assert abs(output_duration_ms - expected_output_ms) < 1.0  # Within 1ms

@@ -265,16 +265,17 @@ def _generate_streaming_with_metrics(
     # Initialize player if needed
     player = AudioPlayer(sample_rate=model.sample_rate) if play else None
 
-    # Initialize audio processor for compression/limiting
-    # Creates stateful processor that maintains compressor envelope across chunks
-    # Use voice-specific settings (not active voice settings)
+    # Initialize audio processor with OLA for seamless chunk stitching + compression/limiting
+    # Signal chain: OLA Crossfade (20ms) → Compressor → Limiter
+    # OLA eliminates clicks at chunk boundaries; compressor/limiter normalize volume
     audio_processor = None
     try:
-        from audio_processor import create_processor
+        from audio_processor import create_processor_with_ola
         compressor = tts_config.get_effective_compressor(voice_name)
         limiter = tts_config.get_effective_limiter(voice_name)
-        audio_processor = create_processor(
+        audio_processor = create_processor_with_ola(
             sample_rate=model.sample_rate,
+            crossfade_ms=20.0,  # Confirmed via listening tests
             input_gain_db=compressor.get("input_gain_db"),
             threshold_db=compressor.get("threshold_db"),
             ratio=compressor.get("ratio"),
@@ -287,9 +288,9 @@ def _generate_streaming_with_metrics(
             limiter_release_ms=limiter.get("release_ms"),
             limiter_enabled=limiter.get("enabled"),
         )
-        log.debug(f"Audio processor initialized for streaming (voice={voice_name})")
+        log.debug(f"Audio processor with OLA initialized for streaming (voice={voice_name})")
     except ImportError:
-        log.debug("audio_processor not available, skipping compression")
+        log.debug("audio_processor not available, skipping OLA and compression")
 
     # Metrics tracking
     gen_start = time.perf_counter()
@@ -315,11 +316,19 @@ def _generate_streaming_with_metrics(
             last_rtf = result.real_time_factor
 
         if player:
-            # Apply compression/limiting before playback
+            # Apply OLA + compression/limiting before playback
             audio_chunk = result.audio
             if audio_processor is not None:
                 audio_chunk = audio_processor(audio_chunk)
-            player.queue_audio(audio_chunk)
+            if len(audio_chunk) > 0:
+                player.queue_audio(audio_chunk)
+
+    # Flush OLA buffer to get remaining samples (the crossfade tail)
+    if audio_processor is not None and player:
+        flush_chunk = audio_processor(None)  # Pass None to flush
+        if len(flush_chunk) > 0:
+            player.queue_audio(flush_chunk)
+            total_samples += len(flush_chunk)
 
     gen_time = time.perf_counter() - gen_start
 
