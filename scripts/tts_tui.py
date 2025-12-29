@@ -2088,6 +2088,10 @@ class AboutScreen(Screen):
                 classes="info",
             ),
             Static(""),
+            Label("Author", classes="title"),
+            Static("aperepel", classes="info"),
+            Static("https://github.com/aperepel/claude-mlx-tts", classes="info"),
+            Static(""),
             Label("Keyboard Shortcuts", classes="title"),
             Static("1 - Voice Lab (per-voice audio settings)", classes="info"),
             Static("2 - System Settings (speed, streaming)", classes="info"),
@@ -2181,8 +2185,15 @@ class MainScreen(Screen):
             with TabPane("About", id="about"):
                 yield Label("Claude MLX TTS", classes="title")
                 yield Static(
-                    "Voice-cloned TTS notifications for Claude Code using MLX.\n\n"
-                    "Use keyboard shortcuts 1-5 to navigate tabs:\n"
+                    "Voice-cloned TTS notifications for Claude Code using MLX."
+                )
+                yield Static("")
+                yield Label("Author", classes="title")
+                yield Static("Andrew Grande")
+                yield Static("https://github.com/aperepel/claude-mlx-tts")
+                yield Static("")
+                yield Label("Keyboard Shortcuts", classes="title")
+                yield Static(
                     "  1 - Voice Lab (per-voice audio settings)\n"
                     "  2 - Clone Lab (voice cloning)\n"
                     "  3 - Prompt Lab (hook prompts and voice)\n"
