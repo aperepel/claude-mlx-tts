@@ -556,7 +556,7 @@ class VoiceSelector(Container):
 
     DEFAULT_CSS = """
     VoiceSelector {
-        height: 22;
+        height: 26;
         width: 32;
         padding: 1;
         border: round $primary;
@@ -800,7 +800,7 @@ class CompressorWidget(Container):
 
     DEFAULT_CSS = """
     CompressorWidget {
-        height: 22;
+        height: 26;
         padding: 1 2;
         border: round $primary;
         border-title-color: $text;
@@ -878,6 +878,7 @@ class CompressorWidget(Container):
                 "Makeup Gain", config.get("gain_db", 8),
                 min_val=0, max_val=24, unit="dB",
                 param_key="gain_db", id="gain-field",
+                highlight=True,
             )
 
     def on_form_field_changed(self, event: FormField.Changed) -> None:
@@ -943,7 +944,7 @@ class LimiterWidget(Container):
 
     DEFAULT_CSS = """
     LimiterWidget {
-        height: 22;
+        height: 26;
         padding: 1 2;
         border: round $primary;
         border-title-color: $text;

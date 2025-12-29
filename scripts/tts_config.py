@@ -72,6 +72,113 @@ DEFAULT_LIMITER = {
     "release_ms": 40,
 }
 
+# Bundled per-voice defaults (ship with plugin, used as fallback)
+# These are tuned settings for bundled voices that override factory defaults
+BUNDLED_VOICE_DEFAULTS = {
+    "alex": {
+        "compressor": {
+            "enabled": True,
+            "input_gain_db": 0.0,
+            "threshold_db": -12,
+            "ratio": 2.0,
+            "attack_ms": 10,
+            "release_ms": 150,
+            "gain_db": 4,
+            "master_gain_db": -6.0,
+        },
+        "limiter": {
+            "enabled": True,
+            "threshold_db": -0.5,
+            "release_ms": 40,
+        },
+    },
+    "c3po": {
+        "compressor": {
+            "enabled": True,
+            "input_gain_db": -3.0,
+            "threshold_db": -12,
+            "ratio": 2.0,
+            "attack_ms": 10,
+            "release_ms": 150,
+            "gain_db": 4,
+            "master_gain_db": 0.0,
+        },
+        "limiter": {
+            "enabled": True,
+            "threshold_db": -0.3,
+            "release_ms": 20,
+        },
+    },
+    "default": {
+        "compressor": {
+            "enabled": True,
+            "input_gain_db": 6.0,
+            "threshold_db": -12,
+            "ratio": 2.0,
+            "attack_ms": 10,
+            "release_ms": 150,
+            "gain_db": 4,
+            "master_gain_db": 6.0,
+        },
+        "limiter": {
+            "enabled": True,
+            "threshold_db": -0.5,
+            "release_ms": 40,
+        },
+    },
+    "jerry": {
+        "compressor": {
+            "enabled": True,
+            "input_gain_db": 0.0,
+            "threshold_db": -12,
+            "ratio": 2.0,
+            "attack_ms": 10,
+            "release_ms": 150,
+            "gain_db": 4,
+            "master_gain_db": -6.0,
+        },
+        "limiter": {
+            "enabled": True,
+            "threshold_db": -0.5,
+            "release_ms": 40,
+        },
+    },
+    "scarlett": {
+        "compressor": {
+            "enabled": True,
+            "input_gain_db": 0.0,
+            "threshold_db": -18,
+            "ratio": 4.0,
+            "attack_ms": 3,
+            "release_ms": 50,
+            "gain_db": 8,
+            "master_gain_db": 0.0,
+        },
+        "limiter": {
+            "enabled": True,
+            "threshold_db": -0.3,
+            "release_ms": 20,
+        },
+    },
+    "snoop": {
+        "compressor": {
+            "enabled": True,
+            "input_gain_db": 3.0,
+            "threshold_db": -18,
+            "ratio": 3.0,
+            "attack_ms": 3,
+            "release_ms": 50,
+            "gain_db": 0,
+            "master_gain_db": 3.0,
+        },
+        "limiter": {
+            "enabled": True,
+            "threshold_db": -0.5,
+            "release_ms": 40,
+        },
+    },
+}
+
 # Valid characters for voice names (security)
 VOICE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
 
@@ -413,31 +520,43 @@ def set_voice_config(voice_name: str, settings: dict) -> None:
 def get_voice_compressor(voice_name: str) -> dict:
     """Get compressor configuration for a specific voice.
 
-    Returns voice-specific settings merged with defaults.
-    Falls back to DEFAULT_COMPRESSOR for missing keys.
+    Priority (later overrides earlier):
+        1. Factory defaults (DEFAULT_COMPRESSOR)
+        2. Bundled voice defaults (BUNDLED_VOICE_DEFAULTS)
+        3. User settings from config (voices[name].compressor)
     """
     config = load_config()
     voices = config.get("voices", {})
     voice_config = voices.get(voice_name, {})
     voice_compressor = voice_config.get("compressor", {})
 
-    # Merge with defaults for missing keys
-    return {**DEFAULT_COMPRESSOR, **voice_compressor}
+    # Get bundled defaults for this voice (if any)
+    bundled = BUNDLED_VOICE_DEFAULTS.get(voice_name, {})
+    bundled_compressor = bundled.get("compressor", {})
+
+    # Merge: factory -> bundled -> user
+    return {**DEFAULT_COMPRESSOR, **bundled_compressor, **voice_compressor}
 
 
 def get_voice_limiter(voice_name: str) -> dict:
     """Get limiter configuration for a specific voice.
 
-    Returns voice-specific settings merged with defaults.
-    Falls back to DEFAULT_LIMITER for missing keys.
+    Priority (later overrides earlier):
+        1. Factory defaults (DEFAULT_LIMITER)
+        2. Bundled voice defaults (BUNDLED_VOICE_DEFAULTS)
+        3. User settings from config (voices[name].limiter)
     """
     config = load_config()
     voices = config.get("voices", {})
     voice_config = voices.get(voice_name, {})
     voice_limiter = voice_config.get("limiter", {})
 
-    # Merge with defaults for missing keys
-    return {**DEFAULT_LIMITER, **voice_limiter}
+    # Get bundled defaults for this voice (if any)
+    bundled = BUNDLED_VOICE_DEFAULTS.get(voice_name, {})
+    bundled_limiter = bundled.get("limiter", {})
+
+    # Merge: factory -> bundled -> user
+    return {**DEFAULT_LIMITER, **bundled_limiter, **voice_limiter}
 
 
 def get_effective_compressor(voice_name: str = None) -> dict:
@@ -951,14 +1070,23 @@ def copy_voice(source: str, target: str | None = None) -> str:
 
 
 def get_voice_defaults(voice_name: str) -> dict | None:
-    """Get the captured defaults for a specific voice.
+    """Get the defaults for a specific voice.
 
-    Returns None if no defaults have been captured for this voice.
+    Priority:
+        1. User-captured defaults from config (voice_defaults)
+        2. Bundled defaults from code (BUNDLED_VOICE_DEFAULTS)
+        3. None if no defaults exist
+
     Returns dict with 'compressor' and 'limiter' keys if defaults exist.
     """
+    # Check user-captured defaults first
     config = load_config()
     voice_defaults = config.get("voice_defaults", {})
-    return voice_defaults.get(voice_name)
+    if voice_name in voice_defaults:
+        return voice_defaults[voice_name]
+
+    # Fall back to bundled defaults
+    return BUNDLED_VOICE_DEFAULTS.get(voice_name)
 
 
 def capture_voice_defaults(voice_name: str) -> dict:
