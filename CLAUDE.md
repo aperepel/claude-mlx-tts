@@ -20,11 +20,8 @@ Claude Summary TTS is a Claude Code plugin that provides text-to-speech notifica
 # Install plugin locally for development
 claude --plugin-dir ~/projects/claude-summary-tts
 
-# Install MLX optional dependencies
-uv sync --extra mlx
-
-# Test TTS script manually (requires JSON input on stdin)
-echo '{"transcript_path": "/path/to/transcript.jsonl"}' | python3 scripts/tts-notify.py
+# Install all dependencies for development (MLX + pytest)
+uv sync --extra mlx --extra dev
 
 # Test macOS say command
 say -v Daniel -r 180 "Test message"

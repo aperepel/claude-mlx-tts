@@ -429,3 +429,154 @@ class TestEmptyTextHandling:
 
         assert results == []
         mock_post.assert_not_called()
+
+
+class TestTrueStreamingEndpoint:
+    """Tests for true streaming endpoint selection."""
+
+    def test_accepts_use_true_streaming_parameter(self):
+        """Should accept use_true_streaming parameter."""
+        from mlx_server_utils import stream_tts_http
+        import inspect
+
+        sig = inspect.signature(stream_tts_http)
+        assert "use_true_streaming" in sig.parameters
+
+    def test_accepts_streaming_interval_parameter(self):
+        """Should accept streaming_interval parameter."""
+        from mlx_server_utils import stream_tts_http
+        import inspect
+
+        sig = inspect.signature(stream_tts_http)
+        assert "streaming_interval" in sig.parameters
+
+    def test_uses_stream_endpoint_by_default(self):
+        """Should use /v1/audio/speech/stream endpoint by default."""
+        from mlx_server_utils import stream_tts_http
+
+        audio = np.zeros(2400, dtype=np.float32)
+        wav_bytes = create_wav_bytes(audio)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response) as mock_post:
+            with patch("mlx_server_utils.ensure_server_running"):
+                list(stream_tts_http("Test"))
+
+        # Verify URL contains /stream
+        call_args = mock_post.call_args
+        url = call_args[0][0] if call_args[0] else call_args[1].get("url", "")
+        assert "/v1/audio/speech/stream" in url
+
+    def test_uses_legacy_endpoint_when_disabled(self):
+        """Should use /v1/audio/speech endpoint when use_true_streaming=False."""
+        from mlx_server_utils import stream_tts_http
+
+        audio = np.zeros(2400, dtype=np.float32)
+        wav_bytes = create_wav_bytes(audio)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response) as mock_post:
+            with patch("mlx_server_utils.ensure_server_running"):
+                list(stream_tts_http("Test", use_true_streaming=False))
+
+        # Verify URL does NOT contain /stream at the end
+        call_args = mock_post.call_args
+        url = call_args[0][0] if call_args[0] else call_args[1].get("url", "")
+        assert url.endswith("/v1/audio/speech")
+
+    def test_includes_streaming_interval_in_payload(self):
+        """Should include streaming_interval in payload when use_true_streaming=True."""
+        from mlx_server_utils import stream_tts_http
+
+        audio = np.zeros(2400, dtype=np.float32)
+        wav_bytes = create_wav_bytes(audio)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response) as mock_post:
+            with patch("mlx_server_utils.ensure_server_running"):
+                list(stream_tts_http("Test", streaming_interval=0.3))
+
+        call_kwargs = mock_post.call_args[1]
+        payload = call_kwargs.get("json", {})
+        assert payload.get("streaming_interval") == 0.3
+
+    def test_excludes_streaming_interval_for_legacy_endpoint(self):
+        """Should NOT include streaming_interval in payload for legacy endpoint."""
+        from mlx_server_utils import stream_tts_http
+
+        audio = np.zeros(2400, dtype=np.float32)
+        wav_bytes = create_wav_bytes(audio)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response) as mock_post:
+            with patch("mlx_server_utils.ensure_server_running"):
+                list(stream_tts_http("Test", use_true_streaming=False))
+
+        call_kwargs = mock_post.call_args[1]
+        payload = call_kwargs.get("json", {})
+        assert "streaming_interval" not in payload
+
+    def test_default_streaming_interval_is_half_second(self):
+        """Default streaming_interval should be 0.5 seconds."""
+        from mlx_server_utils import stream_tts_http
+        import inspect
+
+        sig = inspect.signature(stream_tts_http)
+        default = sig.parameters["streaming_interval"].default
+        assert default == 0.5
+
+
+class TestPlayStreamingHttpTrueStreaming:
+    """Tests for play_streaming_http with true streaming."""
+
+    def test_play_streaming_accepts_use_true_streaming(self):
+        """play_streaming_http should accept use_true_streaming parameter."""
+        from mlx_server_utils import play_streaming_http
+        import inspect
+
+        sig = inspect.signature(play_streaming_http)
+        assert "use_true_streaming" in sig.parameters
+
+    def test_play_streaming_accepts_streaming_interval(self):
+        """play_streaming_http should accept streaming_interval parameter."""
+        from mlx_server_utils import play_streaming_http
+        import inspect
+
+        sig = inspect.signature(play_streaming_http)
+        assert "streaming_interval" in sig.parameters
+
+    def test_play_streaming_uses_stream_endpoint_by_default(self):
+        """play_streaming_http should use /v1/audio/speech/stream by default."""
+        from mlx_server_utils import play_streaming_http
+
+        audio = np.zeros(2400, dtype=np.float32)
+        wav_bytes = create_wav_bytes(audio)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = iter([wav_bytes])
+
+        mock_player = MagicMock()
+        mock_player.playing = False
+        mock_player.buffered_samples.return_value = 0
+
+        with patch("mlx_server_utils.requests.post", return_value=mock_response) as mock_post:
+            with patch("mlx_server_utils.ensure_server_running"):
+                with patch("mlx_server_utils.AudioPlayer", return_value=mock_player):
+                    play_streaming_http("Test")
+
+        call_args = mock_post.call_args
+        url = call_args[0][0] if call_args[0] else call_args[1].get("url", "")
+        assert "/v1/audio/speech/stream" in url

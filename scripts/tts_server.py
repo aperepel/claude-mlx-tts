@@ -38,10 +38,15 @@ warnings.filterwarnings(
 )
 
 import argparse
+import io
 import logging
+import struct
 import sys
 import time
 from pathlib import Path
+from typing import AsyncGenerator
+
+import numpy as np
 
 # Setup logging early
 logging.basicConfig(
@@ -102,6 +107,135 @@ def prewarm_voice_cache(model, voice_name: str | None = None) -> bool:
     except Exception as e:
         log.warning(f"Failed to pre-warm voice cache: {e}")
         return False
+
+
+def create_wav_header(
+    sample_rate: int,
+    channels: int = 1,
+    bits_per_sample: int = 16,
+    data_size: int = 0x7FFFFFFF,
+) -> bytes:
+    """
+    Create WAV header for streaming.
+
+    Uses a large placeholder data_size since we don't know total length upfront.
+    Clients should read until connection closes, not until data_size bytes.
+    """
+    byte_rate = sample_rate * channels * bits_per_sample // 8
+    block_align = channels * bits_per_sample // 8
+
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        36 + data_size,  # file size - 8
+        b"WAVE",
+        b"fmt ",
+        16,  # fmt chunk size
+        1,   # PCM format
+        channels,
+        sample_rate,
+        byte_rate,
+        block_align,
+        bits_per_sample,
+        b"data",
+        data_size,
+    )
+    return header
+
+
+def register_streaming_endpoint(app, model_provider, model_name: str):
+    """
+    Register a true streaming TTS endpoint that uses stream=True.
+
+    This endpoint yields audio chunks as they're generated, enabling
+    playback to start before generation completes (fast TTFT).
+    """
+    from fastapi import HTTPException
+    from fastapi.responses import StreamingResponse
+    from pydantic import BaseModel
+
+    class StreamingSpeechRequest(BaseModel):
+        model: str
+        input: str
+        voice: str | None = None
+        streaming_interval: float = 0.5  # seconds per chunk
+
+    async def generate_streaming_audio(
+        model,
+        text: str,
+        voice: str | None = None,
+        streaming_interval: float = 0.5,
+    ) -> AsyncGenerator[bytes, None]:
+        """
+        Generate streaming audio with proper WAV framing.
+
+        Yields:
+            First: WAV header (44 bytes)
+            Then: Raw PCM audio chunks as int16 bytes
+        """
+        sample_rate = model.sample_rate
+        header_sent = False
+        gen_start = time.perf_counter()
+        ttft = None
+        chunk_count = 0
+        total_samples = 0
+
+        for result in model.generate(
+            text,
+            voice=voice,
+            stream=True,
+            streaming_interval=streaming_interval,
+        ):
+            audio = np.asarray(result.audio)
+
+            if not header_sent:
+                ttft = time.perf_counter() - gen_start
+                yield create_wav_header(sample_rate)
+                header_sent = True
+
+            chunk_count += 1
+            total_samples += len(audio)
+
+            # Convert float32 [-1, 1] to int16 PCM
+            audio_int16 = (audio * 32767).clip(-32768, 32767).astype(np.int16)
+            yield audio_int16.tobytes()
+
+        gen_time = time.perf_counter() - gen_start
+        audio_duration = total_samples / sample_rate if sample_rate > 0 else 0
+        rtf = gen_time / audio_duration if audio_duration > 0 else 0
+
+        log.info(
+            f"TTS STREAM: ttft={ttft:.2f}s gen={gen_time:.2f}s "
+            f"chunks={chunk_count} duration={audio_duration:.1f}s RTF={rtf:.2f}"
+        )
+
+    @app.post("/v1/audio/speech/stream")
+    async def tts_speech_streaming(payload: StreamingSpeechRequest):
+        """
+        Generate streaming speech audio with fast TTFT.
+
+        Unlike /v1/audio/speech, this endpoint uses stream=True to yield
+        audio chunks as they're generated, enabling playback to start
+        before generation completes.
+
+        Returns chunked WAV: header (44 bytes) + raw PCM chunks.
+        """
+        model = model_provider.load_model(payload.model)
+        return StreamingResponse(
+            generate_streaming_audio(
+                model,
+                payload.input,
+                payload.voice,
+                payload.streaming_interval,
+            ),
+            media_type="audio/wav",
+            headers={
+                "Content-Disposition": "attachment; filename=speech.wav",
+                "X-Streaming": "true",
+            },
+        )
+
+    log.info("Registered streaming endpoint: POST /v1/audio/speech/stream")
 
 
 def patch_model_generate(model, initial_voice: str):
@@ -211,6 +345,9 @@ def main():
 
     # Patch model for dynamic voice switching (re-reads config per request)
     patch_model_generate(model, voice_name)
+
+    # Register our streaming endpoint (uses stream=True for true streaming)
+    register_streaming_endpoint(app, model_provider, args.model)
 
     # Start server (single process to preserve model state)
     log.info(f"Starting server on {args.host}:{args.port}")

@@ -9,8 +9,8 @@ For system architecture and component diagrams, see [ARCHITECTURE.md](ARCHITECTU
 git clone https://github.com/aperepel/claude-mlx-tts.git
 cd claude-mlx-tts
 
-# Install MLX dependencies
-uv sync --extra mlx
+# Install all dependencies (MLX + dev tools)
+uv sync --extra mlx --extra dev
 ```
 
 ## Uninstall Marketplace Version

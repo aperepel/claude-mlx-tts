@@ -218,16 +218,16 @@ def speak_mlx_http(
     text: str,
     voice: str | None = None,
     timeout: int = 60,
-    max_retries: int = 2
+    max_retries: int = 2,
+    use_streaming: bool = True,
 ) -> None:
     """
-    Send TTS request to the server via HTTP.
+    Send TTS request to the server via HTTP and play audio.
 
-    Auto-starts server if not running. Retries on transient failures like
-    invalid WAV responses (can occur during multi-chunk streaming).
+    Uses true streaming by default (play_streaming_http) for fast TTFT.
+    Falls back to non-streaming mode if use_streaming=False.
 
-    Note: Speed parameter is not supported by Chatterbox model.
-    The mlx_audio library explicitly ignores speed for Chatterbox.
+    Auto-starts server if not running. Retries on transient failures.
 
     Args:
         text: Text to convert to speech.
@@ -235,6 +235,7 @@ def speak_mlx_http(
                If None, server uses active voice from config.
         timeout: Request timeout in seconds.
         max_retries: Number of retry attempts for transient failures.
+        use_streaming: If True (default), use streaming for fast TTFT.
 
     Raises:
         ServerStartError: If server fails to start.
@@ -244,100 +245,29 @@ def speak_mlx_http(
         log.warning("Empty text, skipping TTS")
         return
 
-    # Voice is passed directly in the request payload - no config modification needed
-    # This avoids race conditions between concurrent hooks
-
-    ensure_server_running()
-
-    url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
-
-    # Pass voice directly to server API (mlx_audio server supports 'voice' field)
-    # Server will use this voice, or fall back to active voice from config if None
-    payload = {
-        "input": text,
-        "model": MLX_MODEL,
-        # Note: speed parameter not included - Chatterbox doesn't support it
-    }
-    if voice:
-        payload["voice"] = voice
-
     last_error = None
 
     for attempt in range(max_retries + 1):
         try:
-            log.debug(f"Sending TTS request (attempt {attempt + 1}): {text[:50]}...")
+            mode = "streaming" if use_streaming else "non-streaming"
+            log.debug(f"TTS request [{mode}] (attempt {attempt + 1}): {text[:50]}...")
 
-            gen_start = time.time()
-            response = requests.post(url, json=payload, timeout=timeout)
-
-            if response.status_code != 200:
-                raise TTSRequestError(
-                    f"TTS request failed with status {response.status_code}: {response.text}"
+            if use_streaming:
+                # Use true streaming for fast TTFT
+                metrics = play_streaming_http(
+                    text,
+                    voice=voice,
+                    timeout=timeout,
+                    use_true_streaming=True,
                 )
-
-            # Play the audio response
-            audio_data = response.content
-            gen_time = time.time() - gen_start
-
-            if not audio_data:
-                raise TTSRequestError("Empty audio response from server")
-
-            import sounddevice as sd
-            import soundfile as sf
-            import numpy as np
-            import io
-
-            # Validate WAV header before parsing
-            if len(audio_data) < 12 or audio_data[:4] != b'RIFF':
-                # Log diagnostic info for debugging
-                preview = audio_data[:100] if len(audio_data) > 100 else audio_data
-                log.warning(
-                    f"Invalid WAV response (attempt {attempt + 1}): "
-                    f"len={len(audio_data)}, preview={preview!r}"
+                log.info(
+                    f"Streaming TTS: ttft={metrics['ttft']:.2f}s "
+                    f"gen={metrics['gen_time']:.2f}s "
+                    f"({metrics['audio_duration']:.1f}s audio)"
                 )
-                raise TTSRequestError(
-                    f"Invalid WAV response: missing RIFF header (len={len(audio_data)})"
-                )
-
-            # Load audio from response bytes
-            audio_buffer = io.BytesIO(audio_data)
-            data, samplerate = sf.read(audio_buffer)
-            data = data.astype(np.float32)
-
-            # Apply compression/limiting for consistent, punchy playback
-            # Use voice-specific settings (not active voice settings)
-            try:
-                from audio_processor import create_processor
-                # Get voice-specific compressor/limiter settings
-                compressor = tts_config.get_effective_compressor(voice)
-                limiter = tts_config.get_effective_limiter(voice)
-                processor = create_processor(
-                    sample_rate=samplerate,
-                    input_gain_db=compressor.get("input_gain_db"),
-                    threshold_db=compressor.get("threshold_db"),
-                    ratio=compressor.get("ratio"),
-                    attack_ms=compressor.get("attack_ms"),
-                    release_ms=compressor.get("release_ms"),
-                    gain_db=compressor.get("gain_db"),
-                    master_gain_db=compressor.get("master_gain_db"),
-                    compressor_enabled=compressor.get("enabled"),
-                    limiter_threshold_db=limiter.get("threshold_db"),
-                    limiter_release_ms=limiter.get("release_ms"),
-                    limiter_enabled=limiter.get("enabled"),
-                )
-                data = processor(data)
-            except ImportError:
-                log.debug("audio_processor not available, skipping compression")
-
-            # Calculate audio duration
-            audio_duration = len(data) / samplerate
-            log.info(f"Generation: {gen_time:.2f}s ({audio_duration:.1f}s audio)")
-
-            play_start = time.time()
-            sd.play(data, samplerate)
-            sd.wait()
-            play_time = time.time() - play_start
-            log.info(f"Playback: {play_time:.2f}s")
+            else:
+                # Legacy non-streaming mode
+                _speak_mlx_http_legacy(text, voice, timeout)
 
             # Success - exit the retry loop
             return
@@ -357,6 +287,91 @@ def speak_mlx_http(
     raise last_error or TTSRequestError("TTS request failed after all retries")
 
 
+def _speak_mlx_http_legacy(
+    text: str,
+    voice: str | None = None,
+    timeout: int = 60,
+) -> None:
+    """
+    Legacy non-streaming TTS via HTTP.
+
+    Waits for full audio generation before playback. Used as fallback
+    when streaming is disabled.
+    """
+    ensure_server_running()
+
+    url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
+
+    payload = {
+        "input": text,
+        "model": MLX_MODEL,
+    }
+    if voice:
+        payload["voice"] = voice
+
+    gen_start = time.time()
+    response = requests.post(url, json=payload, timeout=timeout)
+
+    if response.status_code != 200:
+        raise TTSRequestError(
+            f"TTS request failed with status {response.status_code}: {response.text}"
+        )
+
+    audio_data = response.content
+    gen_time = time.time() - gen_start
+
+    if not audio_data:
+        raise TTSRequestError("Empty audio response from server")
+
+    import sounddevice as sd
+    import soundfile as sf
+    import numpy as np
+    import io
+
+    # Validate WAV header before parsing
+    if len(audio_data) < 12 or audio_data[:4] != b'RIFF':
+        preview = audio_data[:100] if len(audio_data) > 100 else audio_data
+        log.warning(f"Invalid WAV response: len={len(audio_data)}, preview={preview!r}")
+        raise TTSRequestError(f"Invalid WAV response: missing RIFF header (len={len(audio_data)})")
+
+    # Load audio from response bytes
+    audio_buffer = io.BytesIO(audio_data)
+    data, samplerate = sf.read(audio_buffer)
+    data = data.astype(np.float32)
+
+    # Apply compression/limiting
+    try:
+        from audio_processor import create_processor
+        compressor = tts_config.get_effective_compressor(voice)
+        limiter = tts_config.get_effective_limiter(voice)
+        processor = create_processor(
+            sample_rate=samplerate,
+            input_gain_db=compressor.get("input_gain_db"),
+            threshold_db=compressor.get("threshold_db"),
+            ratio=compressor.get("ratio"),
+            attack_ms=compressor.get("attack_ms"),
+            release_ms=compressor.get("release_ms"),
+            gain_db=compressor.get("gain_db"),
+            master_gain_db=compressor.get("master_gain_db"),
+            compressor_enabled=compressor.get("enabled"),
+            limiter_threshold_db=limiter.get("threshold_db"),
+            limiter_release_ms=limiter.get("release_ms"),
+            limiter_enabled=limiter.get("enabled"),
+        )
+        data = processor(data)
+    except ImportError:
+        log.debug("audio_processor not available, skipping compression")
+
+    audio_duration = len(data) / samplerate
+    log.info(f"Generation: {gen_time:.2f}s ({audio_duration:.1f}s audio)")
+
+    play_start = time.time()
+    sd.play(data, samplerate)
+    sd.wait()
+    play_time = time.time() - play_start
+    log.info(f"Playback: {play_time:.2f}s")
+
+
 # =============================================================================
 # Streaming TTS via HTTP
 # =============================================================================
@@ -366,6 +381,8 @@ def stream_tts_http(
     voice: str | None = None,
     timeout: int = 60,
     chunk_size: int = 8192,
+    use_true_streaming: bool = True,
+    streaming_interval: float = 0.5,
 ) -> Generator[tuple[WavHeader, "np.ndarray"], None, None]:
     """
     Stream TTS audio chunks from the server via HTTP.
@@ -380,6 +397,10 @@ def stream_tts_http(
         voice: Voice name to use. If None, server uses active voice from config.
         timeout: Request timeout in seconds (for first byte).
         chunk_size: Size of chunks to read from response (default 8192).
+        use_true_streaming: If True, use /v1/audio/speech/stream endpoint
+            which passes stream=True to the model for fast TTFT.
+            If False, use legacy endpoint (full generation before HTTP chunking).
+        streaming_interval: Seconds of audio per chunk when use_true_streaming=True.
 
     Yields:
         Tuples of (WavHeader, audio_chunk) where audio_chunk is a float32
@@ -397,7 +418,11 @@ def stream_tts_http(
 
     ensure_server_running()
 
-    url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
+    # Choose endpoint based on streaming mode
+    if use_true_streaming:
+        url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech/stream"
+    else:
+        url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
     payload = {
         "input": text,
@@ -405,12 +430,15 @@ def stream_tts_http(
     }
     if voice:
         payload["voice"] = voice
+    if use_true_streaming:
+        payload["streaming_interval"] = streaming_interval
 
     response = None
     parser = StreamingWavParser()
 
     try:
-        log.debug(f"Sending streaming TTS request: {text[:50]}...")
+        endpoint = "/v1/audio/speech/stream" if use_true_streaming else "/v1/audio/speech"
+        log.debug(f"TTS request [stream={use_true_streaming}] -> {endpoint}: {text[:50]}...")
 
         response = requests.post(url, json=payload, timeout=timeout, stream=True)
 
@@ -450,6 +478,8 @@ def play_streaming_http(
     voice: str | None = None,
     timeout: int = 60,
     chunk_size: int = 8192,
+    use_true_streaming: bool = True,
+    streaming_interval: float = 0.5,
 ) -> dict[str, float]:
     """
     Stream TTS audio from the server and play with AudioPlayer.
@@ -465,6 +495,9 @@ def play_streaming_http(
         voice: Voice name to use. If None, server uses active voice from config.
         timeout: Request timeout in seconds (for first byte).
         chunk_size: Size of chunks to read from response (default 8192).
+        use_true_streaming: If True, use /v1/audio/speech/stream endpoint
+            which passes stream=True to the model for fast TTFT.
+        streaming_interval: Seconds of audio per chunk when use_true_streaming=True.
 
     Returns:
         Dict with timing metrics:
@@ -497,7 +530,11 @@ def play_streaming_http(
 
     ensure_server_running()
 
-    url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
+    # Choose endpoint based on streaming mode
+    if use_true_streaming:
+        url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech/stream"
+    else:
+        url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
     payload = {
         "input": text,
@@ -505,6 +542,8 @@ def play_streaming_http(
     }
     if voice:
         payload["voice"] = voice
+    if use_true_streaming:
+        payload["streaming_interval"] = streaming_interval
 
     response = None
     parser = StreamingWavParser()
@@ -520,7 +559,8 @@ def play_streaming_http(
     bits_per_sample = 16  # Default for Chatterbox model
 
     try:
-        log.debug(f"Sending streaming TTS request: {text[:50]}...")
+        endpoint = "/v1/audio/speech/stream" if use_true_streaming else "/v1/audio/speech"
+        log.debug(f"TTS request [stream={use_true_streaming}] -> {endpoint}: {text[:50]}...")
 
         response = requests.post(url, json=payload, timeout=timeout, stream=True)
 
