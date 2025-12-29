@@ -143,7 +143,15 @@ def get_active_profile() -> str:
 
 
 def get_streaming_interval(profile: str = None) -> float:
-    """Get the streaming interval for a profile (default: active profile)."""
+    """Get the streaming interval for a profile (default: active profile).
+
+    Can be overridden via TTS_STREAMING_INTERVAL env var for experimentation.
+    """
+    # Allow env var override for experimentation
+    env_val = os.environ.get("TTS_STREAMING_INTERVAL")
+    if env_val:
+        return float(env_val)
+
     config = load_config()
     if profile is None:
         profile = config.get("active_profile", "default")
@@ -735,6 +743,7 @@ def delete_voice(name: str) -> None:
     Removes:
         - Voice file(s) from assets (.safetensors and/or .wav)
         - Voice settings from config.voices
+        - Voice defaults from config.voice_defaults
         - Hook voice overrides that reference this voice
 
     If deleting the active voice, sets active_voice to first remaining voice.
@@ -773,6 +782,12 @@ def delete_voice(name: str) -> None:
     if "voices" in config and name in config["voices"]:
         del config["voices"][name]
 
+    # Clean up voice_defaults
+    if "voice_defaults" in config and name in config["voice_defaults"]:
+        del config["voice_defaults"][name]
+        if not config["voice_defaults"]:
+            del config["voice_defaults"]
+
     if "hooks" in config:
         for hook_type in list(config["hooks"].keys()):
             if config["hooks"][hook_type].get("voice") == name:
@@ -795,6 +810,7 @@ def rename_voice(old_name: str, new_name: str) -> None:
     Updates:
         - Voice file(s) in assets (.safetensors and/or .wav)
         - Voice settings key in config.voices
+        - Voice defaults key in config.voice_defaults
         - active_voice if renaming the active voice
         - Hook voice overrides that reference this voice
 
@@ -829,6 +845,10 @@ def rename_voice(old_name: str, new_name: str) -> None:
 
     if "voices" in config and old_name in config["voices"]:
         config["voices"][new_name] = config["voices"].pop(old_name)
+
+    # Rename voice_defaults entry
+    if "voice_defaults" in config and old_name in config["voice_defaults"]:
+        config["voice_defaults"][new_name] = config["voice_defaults"].pop(old_name)
 
     if config.get("active_voice") == old_name:
         config["active_voice"] = new_name
@@ -868,6 +888,7 @@ def copy_voice(source: str, target: str | None = None) -> str:
     Copies:
         - Voice file(s) from assets (.safetensors and/or .wav)
         - Voice settings from config.voices (if any)
+        - Voice defaults from config.voice_defaults (if any)
 
     Does NOT copy:
         - Hook voice overrides
@@ -910,16 +931,154 @@ def copy_voice(source: str, target: str | None = None) -> str:
     config = load_config()
 
     if "voices" in config and source in config["voices"]:
-        import copy
-        config["voices"][target] = copy.deepcopy(config["voices"][source])
+        import copy as copy_module
+        config["voices"][target] = copy_module.deepcopy(config["voices"][source])
+
+    # Copy voice_defaults if they exist
+    if "voice_defaults" in config and source in config["voice_defaults"]:
+        import copy as copy_module
+        if "voice_defaults" not in config:
+            config["voice_defaults"] = {}
+        config["voice_defaults"][target] = copy_module.deepcopy(config["voice_defaults"][source])
 
     save_config(config)
     return target
 
 
 # =============================================================================
+# Voice Defaults (Captured Baseline Settings)
+# =============================================================================
+
+
+def get_voice_defaults(voice_name: str) -> dict | None:
+    """Get the captured defaults for a specific voice.
+
+    Returns None if no defaults have been captured for this voice.
+    Returns dict with 'compressor' and 'limiter' keys if defaults exist.
+    """
+    config = load_config()
+    voice_defaults = config.get("voice_defaults", {})
+    return voice_defaults.get(voice_name)
+
+
+def capture_voice_defaults(voice_name: str) -> dict:
+    """Capture current effective settings as the default for a voice.
+
+    Takes the current effective compressor and limiter settings
+    (merged with factory defaults) and stores them as the captured
+    defaults for this voice.
+
+    Args:
+        voice_name: The voice to capture defaults for
+
+    Returns:
+        The captured defaults dict
+    """
+    # Get current effective settings (merged with factory defaults)
+    effective_compressor = get_voice_compressor(voice_name)
+    effective_limiter = get_voice_limiter(voice_name)
+
+    captured = {
+        "compressor": effective_compressor.copy(),
+        "limiter": effective_limiter.copy(),
+    }
+
+    config = load_config()
+
+    if "voice_defaults" not in config:
+        config["voice_defaults"] = {}
+
+    config["voice_defaults"][voice_name] = captured
+    save_config(config)
+
+    return captured
+
+
+def capture_all_voice_defaults() -> dict[str, dict]:
+    """Capture current settings as defaults for all voices with config.
+
+    Returns dict mapping voice_name -> captured defaults.
+    """
+    config = load_config()
+    voices = config.get("voices", {})
+
+    captured_all = {}
+    for voice_name in voices:
+        captured_all[voice_name] = capture_voice_defaults(voice_name)
+
+    return captured_all
+
+
+def has_voice_defaults(voice_name: str) -> bool:
+    """Check if a voice has captured defaults."""
+    return get_voice_defaults(voice_name) is not None
+
+
+def delete_voice_defaults(voice_name: str) -> None:
+    """Delete captured defaults for a voice.
+
+    Used when deleting a voice to clean up.
+    """
+    config = load_config()
+    voice_defaults = config.get("voice_defaults", {})
+
+    if voice_name in voice_defaults:
+        del voice_defaults[voice_name]
+        if not voice_defaults:
+            del config["voice_defaults"]
+        save_config(config)
+
+
+def reset_voice_to_captured_defaults(voice_name: str) -> bool:
+    """Reset a voice's settings to its captured defaults.
+
+    If no captured defaults exist for this voice, returns False
+    and does nothing. Use reset_voice_to_factory_defaults() instead.
+
+    Args:
+        voice_name: The voice to reset
+
+    Returns:
+        True if reset was successful, False if no captured defaults exist
+    """
+    captured = get_voice_defaults(voice_name)
+    if captured is None:
+        return False
+
+    config = load_config()
+
+    if "voices" not in config:
+        config["voices"] = {}
+    if voice_name not in config["voices"]:
+        config["voices"][voice_name] = {}
+
+    config["voices"][voice_name]["compressor"] = captured["compressor"].copy()
+    config["voices"][voice_name]["limiter"] = captured["limiter"].copy()
+    save_config(config)
+
+    return True
+
+
+# =============================================================================
 # Reset to Defaults
 # =============================================================================
+
+
+def reset_voice_to_factory_defaults(voice_name: str) -> None:
+    """Reset a specific voice's settings to factory defaults.
+
+    This ignores any captured defaults and uses DEFAULT_COMPRESSOR/DEFAULT_LIMITER.
+    """
+    config = load_config()
+
+    if "voices" not in config:
+        config["voices"] = {}
+    if voice_name not in config["voices"]:
+        config["voices"][voice_name] = {}
+
+    config["voices"][voice_name]["compressor"] = DEFAULT_COMPRESSOR.copy()
+    config["voices"][voice_name]["limiter"] = DEFAULT_LIMITER.copy()
+    save_config(config)
 
 
 def reset_compressor_to_defaults() -> None:
@@ -951,10 +1110,19 @@ def reset_limiter_to_defaults() -> None:
 
 
 def reset_all_audio_to_defaults() -> None:
-    """Reset all audio settings (compressor + limiter) for active voice to factory defaults."""
+    """Reset audio settings for active voice.
+
+    If captured defaults exist for this voice, resets to those.
+    Otherwise, resets to factory defaults.
+    """
     config = load_config()
     voice_name = config.get("active_voice", "default")
 
+    # Try captured defaults first
+    if reset_voice_to_captured_defaults(voice_name):
+        return
+
+    # Fall back to factory defaults
     if "voices" not in config:
         config["voices"] = {}
     if voice_name not in config["voices"]:
@@ -1003,6 +1171,58 @@ def cmd_status() -> None:
     print("  uv run --directory $CLAUDE_PLUGIN_ROOT python scripts/tts_configurator.py")
 
 
+def cmd_capture_defaults(voice_name: str | None = None) -> None:
+    """Capture current settings as defaults for voice(s).
+
+    If voice_name is provided, captures for that voice.
+    Otherwise, captures for all voices with custom settings.
+    """
+    if voice_name:
+        # Capture for specific voice
+        captured = capture_voice_defaults(voice_name)
+        print(f"Captured defaults for '{voice_name}':")
+        print(f"  Compressor: {len(captured['compressor'])} settings")
+        print(f"  Limiter: {len(captured['limiter'])} settings")
+    else:
+        # Capture for all voices
+        config = load_config()
+        voices = config.get("voices", {})
+
+        if not voices:
+            print("No voices with custom settings found.")
+            return
+
+        print(f"Capturing defaults for {len(voices)} voice(s)...")
+        for name in sorted(voices.keys()):
+            captured = capture_voice_defaults(name)
+            print(f"  ✓ {name}")
+
+        print(f"\nCaptured defaults saved to config.")
+
+
+def cmd_list_defaults() -> None:
+    """List voices with captured defaults."""
+    config = load_config()
+    voice_defaults = config.get("voice_defaults", {})
+
+    if not voice_defaults:
+        print("No captured defaults found.")
+        print("Run 'capture-defaults' to capture current settings as defaults.")
+        return
+
+    print(f"Voices with captured defaults ({len(voice_defaults)}):")
+    for name in sorted(voice_defaults.keys()):
+        defaults = voice_defaults[name]
+        comp_enabled = defaults.get("compressor", {}).get("enabled", True)
+        lim_enabled = defaults.get("limiter", {}).get("enabled", True)
+        status = []
+        if comp_enabled:
+            status.append("comp")
+        if lim_enabled:
+            status.append("lim")
+        print(f"  {name} [{', '.join(status)}]")
+
+
 def main() -> None:
     """CLI entry point."""
     if len(sys.argv) < 2:
@@ -1015,9 +1235,15 @@ def main() -> None:
         cmd_status()
     elif command == "show":
         cmd_show()
+    elif command == "capture-defaults":
+        # Optional voice name argument
+        voice_name = sys.argv[2] if len(sys.argv) > 2 else None
+        cmd_capture_defaults(voice_name)
+    elif command == "list-defaults":
+        cmd_list_defaults()
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
-        print("Usage: tts-config.py [status|show]", file=sys.stderr)
+        print("Usage: tts-config.py [status|show|capture-defaults|list-defaults]", file=sys.stderr)
         sys.exit(1)
 
 

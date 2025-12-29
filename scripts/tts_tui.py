@@ -176,6 +176,7 @@ from tts_config import (
     get_streaming_interval,
     get_voice_format,
     get_voice_usage,
+    has_voice_defaults,
     rename_voice,
     reset_all_audio_to_defaults,
     set_active_voice,
@@ -1454,9 +1455,19 @@ class PreviewWidget(Container):
         if event.button.id == "play-preview-btn":
             self._play_preview()
         elif event.button.id == "reset-audio-btn":
+            # Check if voice has captured defaults before reset
+            voice_name = get_active_voice()
+            had_captured = has_voice_defaults(voice_name)
+
             reset_all_audio_to_defaults()
             self.post_message(self.AudioReset())
             self.app.set_focus(None)
+
+            # Show appropriate message
+            if had_captured:
+                self.notify(f"Reset to captured defaults", severity="information")
+            else:
+                self.notify(f"Reset to factory defaults", severity="information")
 
     def _play_preview(self) -> None:
         """Play the preview phrase using TTS."""
