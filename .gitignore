@@ -7,3 +7,4 @@ logs/
 *.wav
 !assets/*.wav
 .DS_Store
+typings/

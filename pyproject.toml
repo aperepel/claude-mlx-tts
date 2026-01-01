@@ -51,4 +51,5 @@ dev = [
     "httpx>=0.28.1",
     "pyright>=1.1.400",
     "pytest>=9.0.2",
+    "types-requests>=2.32.4.20250913",
 ]
