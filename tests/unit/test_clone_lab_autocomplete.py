@@ -275,7 +275,7 @@ class TestCacheInvalidationOnFocus:
 
         # Create instance with mocked target
         autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
-        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}
+        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}  # type: ignore[assignment]
         autocomplete.clear_directory_cache = MagicMock()
 
         # Mock the parent class's _handle_focus_change
@@ -291,7 +291,7 @@ class TestCacheInvalidationOnFocus:
         from unittest.mock import MagicMock, patch
 
         autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
-        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}
+        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}  # type: ignore[assignment]
         autocomplete.clear_directory_cache = MagicMock()
 
         with patch.object(WavPathAutoComplete.__bases__[0], '_handle_focus_change'):

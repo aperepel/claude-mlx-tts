@@ -34,6 +34,7 @@ import sys
 import time
 from typing import Any, Generator
 
+import numpy as np
 import requests
 
 from streaming_wav_parser import StreamingWavParser, WavHeader, WavParseError
@@ -383,7 +384,7 @@ def stream_tts_http(
     chunk_size: int = 8192,
     use_true_streaming: bool = True,
     streaming_interval: float = 0.5,
-) -> Generator[tuple[WavHeader, "np.ndarray"], None, None]:
+) -> Generator[tuple[WavHeader | None, np.ndarray], None, None]:
     """
     Stream TTS audio chunks from the server via HTTP.
 

@@ -45,6 +45,9 @@ class WavPathAutoComplete(PathAutoComplete):
     # File extensions to show (lowercase)
     ALLOWED_EXTENSIONS = {".wav"}
 
+    # Type annotation for inherited cache attribute
+    _directory_cache: dict[str, list[os.DirEntry[str]]]
+
     def _expand_tilde(self, path_str: str) -> str:
         """Expand ~ to home directory path."""
         if path_str.startswith("~"):
@@ -1802,8 +1805,8 @@ class CloneLabWidget(Container):
         self.is_cloning = True
         self.query_one("#clone-btn", Button).display = False
         self.query_one("#clone-loading").display = True
-        self.query_one("#status-msg").update("Cloning voice... (loading model)")
-        self.query_one("#status-msg").display = True
+        self.query_one("#status-msg", Static).update("Cloning voice... (loading model)")
+        self.query_one("#status-msg", Static).display = True
 
         self._run_clone_worker(wav_path, voice_name)
 

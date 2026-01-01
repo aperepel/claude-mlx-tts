@@ -262,8 +262,8 @@ def _generate_streaming_with_metrics(
         from mlx_audio.tts.generate import load_audio
         ref_audio_data = load_audio(ref_audio, sample_rate=model.sample_rate)
 
-    # Initialize player if needed
-    player = AudioPlayer(sample_rate=model.sample_rate) if play else None
+    # Initialize player if needed (AudioPlayer may be None if import failed)
+    player = AudioPlayer(sample_rate=model.sample_rate) if play and AudioPlayer is not None else None
 
     # Initialize audio processor with OLA for seamless chunk stitching + compression/limiting
     # Signal chain: OLA Crossfade (20ms) → Compressor → Limiter
