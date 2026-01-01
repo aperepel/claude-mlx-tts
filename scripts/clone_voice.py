@@ -13,7 +13,7 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import mlx.core as mx
 
@@ -122,6 +122,24 @@ def flatten_conditionals(conds: "Conditionals") -> dict[str, mx.array]:
         arrays[f"gen_{key}"] = value
 
     return arrays
+
+
+@overload
+def extract_and_save_conditionals(
+    model: Any,
+    input_path: Path,
+    output_path: Path,
+    return_sizes: Literal[False] = False,
+) -> Path: ...
+
+
+@overload
+def extract_and_save_conditionals(
+    model: Any,
+    input_path: Path,
+    output_path: Path,
+    return_sizes: Literal[True],
+) -> tuple[Path, int, int]: ...
 
 
 def extract_and_save_conditionals(

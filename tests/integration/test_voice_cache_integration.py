@@ -7,6 +7,7 @@ Run with: uv run pytest tests/integration/
 import os
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -31,7 +32,7 @@ class TestVoiceCacheIntegration:
         voice_ref = str(_PLUGIN_ROOT / "assets" / "default_voice.wav")
 
         # Load model
-        model = load_model("mlx-community/chatterbox-turbo-fp16")
+        model = load_model(Path("mlx-community/chatterbox-turbo-fp16"))
 
         # Clean any existing cache for this voice
         try:

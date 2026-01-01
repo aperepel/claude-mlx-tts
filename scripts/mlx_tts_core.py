@@ -25,6 +25,7 @@ Usage:
 import os
 import time
 import logging
+from pathlib import Path
 from typing import Any
 
 # Import AudioPlayer for streaming playback
@@ -87,7 +88,7 @@ def load_tts_model(model_path: str | None = None) -> Any:
     log.info(f"Loading TTS model: {path}")
 
     try:
-        model = load_model(model_path=path)
+        model = load_model(model_path=Path(path))
         log.info(f"Model loaded successfully (sample_rate={model.sample_rate})")
         return model
     except Exception as e:
