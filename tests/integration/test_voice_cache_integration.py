@@ -15,6 +15,22 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 
+def _get_voice_wav_path() -> Path:
+    """Get path to a voice WAV file for testing."""
+    scripts_dir = Path(__file__).parent.parent.parent / "scripts"
+    plugin_root = scripts_dir.parent
+    return plugin_root / "assets" / "default_voice.wav"
+
+
+# Skip all tests if no WAV file exists (project uses pre-extracted .safetensors)
+_voice_wav = _get_voice_wav_path()
+_skip_no_wav = pytest.mark.skipif(
+    not _voice_wav.exists(),
+    reason=f"Voice WAV file not found: {_voice_wav} (project uses .safetensors)"
+)
+
+
+@_skip_no_wav
 class TestVoiceCacheIntegration:
     """Integration tests for voice caching with real MLX model."""
 
@@ -31,8 +47,8 @@ class TestVoiceCacheIntegration:
         # Use the default voice reference
         voice_ref = str(_PLUGIN_ROOT / "assets" / "default_voice.wav")
 
-        # Load model
-        model = load_model(Path("mlx-community/chatterbox-turbo-fp16"))
+        # Load model (pass string for HuggingFace ID, not Path - triggers hub resolution)
+        model = load_model("mlx-community/chatterbox-turbo-fp16")  # type: ignore[arg-type]
 
         # Clean any existing cache for this voice
         try:

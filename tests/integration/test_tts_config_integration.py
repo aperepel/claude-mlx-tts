@@ -59,7 +59,7 @@ class TestPerVoiceConfigIntegration:
                 assert "voice_bob" in voices
 
                 # 2. Default active voice
-                assert get_active_voice() == "default_voice"
+                assert get_active_voice() == "default"
 
                 # 3. Set active voice
                 set_active_voice("voice_alice")

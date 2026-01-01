@@ -88,7 +88,7 @@ def load_tts_model(model_path: str | None = None) -> Any:
     log.info(f"Loading TTS model: {path}")
 
     try:
-        model = load_model(model_path=Path(path))
+        model = load_model(model_path=path)  # type: ignore[arg-type]
         log.info(f"Model loaded successfully (sample_rate={model.sample_rate})")
         return model
     except Exception as e:
