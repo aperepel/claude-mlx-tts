@@ -132,7 +132,13 @@ def load_conditionals(voice_ref: str) -> "Conditionals | None":
 
     try:
         cache_path = get_cache_path(voice_ref)
-        arrays = mx.load(str(cache_path))
+        loaded = mx.load(str(cache_path))
+
+        # Narrow type: safetensors always returns dict[str, array]
+        if not isinstance(loaded, dict):
+            log.warning(f"Unexpected load result type: {type(loaded)}")
+            return None
+        arrays: dict[str, mx.array] = loaded
 
         # Import the types we need
         from mlx_audio.tts.models.chatterbox_turbo.chatterbox_turbo import (
@@ -182,7 +188,12 @@ def load_conditionals_from_file(safetensors_path: Path) -> "Conditionals":
     if not safetensors_path.exists():
         raise FileNotFoundError(f"Safetensors file not found: {safetensors_path}")
 
-    arrays = mx.load(str(safetensors_path))
+    loaded = mx.load(str(safetensors_path))
+
+    # Narrow type: safetensors always returns dict[str, array]
+    if not isinstance(loaded, dict):
+        raise TypeError(f"Expected dict from safetensors, got {type(loaded)}")
+    arrays: dict[str, mx.array] = loaded
 
     # Import the types we need
     from mlx_audio.tts.models.chatterbox_turbo.chatterbox_turbo import (

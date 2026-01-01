@@ -232,13 +232,15 @@ class TestSaveConditionals:
             f.write(b"voice content for save")
             temp_path = f.name
 
+        result = None
         try:
             result = save_conditionals(mock_conds, temp_path)
             expected = get_cache_path(temp_path)
             assert result == expected
         finally:
             os.unlink(temp_path)
-            result.unlink(missing_ok=True)
+            if result:
+                result.unlink(missing_ok=True)
 
     def test_saves_as_safetensors(self):
         """save_conditionals should save data in safetensors format."""
@@ -264,16 +266,19 @@ class TestSaveConditionals:
             f.write(b"voice for safetensors test")
             temp_path = f.name
 
+        result = None
         try:
             result = save_conditionals(mock_conds, temp_path)
 
             # Verify it's a valid safetensors file by loading it
             loaded = mx.load(str(result))
+            assert isinstance(loaded, dict)
             assert "t3_speaker_emb" in loaded
             assert "gen_prompt_token" in loaded
         finally:
             os.unlink(temp_path)
-            result.unlink(missing_ok=True)
+            if result:
+                result.unlink(missing_ok=True)
 
 
 class TestLoadConditionals:
@@ -373,6 +378,7 @@ class TestLoadConditionals:
             result = load_conditionals(temp_path)
 
             # Verify data integrity
+            assert result is not None
             assert np.allclose(
                 np.array(result.t3.speaker_emb),
                 np.array(original_speaker_emb)
@@ -574,6 +580,7 @@ class TestVoiceCachePerformance:
             f.write(b"voice for perf test")
             temp_path = f.name
 
+        cache_path = None
         try:
             # Save to cache first
             cache_path = save_conditionals(mock_conds, temp_path)
@@ -595,7 +602,8 @@ class TestVoiceCachePerformance:
 
         finally:
             os.unlink(temp_path)
-            cache_path.unlink(missing_ok=True)
+            if cache_path:
+                cache_path.unlink(missing_ok=True)
 
 
 # =============================================================================

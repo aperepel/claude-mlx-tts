@@ -33,14 +33,14 @@ class TestCloneVoiceIntegration:
         # Validate input
         input_path = validate_input_file(str(default_voice_path))
 
-        # Load model
-        model = load_model("mlx-community/chatterbox-turbo-fp16")
+        # Load model (string is resolved by HuggingFace Hub)
+        model = load_model("mlx-community/chatterbox-turbo-fp16")  # type: ignore[arg-type]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_voice.safetensors"
 
-            # Extract and save
-            result, input_size, output_size = extract_and_save_conditionals(
+            # Extract and save (tuple returned when return_sizes=True)
+            result, input_size, output_size = extract_and_save_conditionals(  # type: ignore[misc]
                 model, input_path, output_path, return_sizes=True
             )
 
@@ -61,15 +61,16 @@ class TestCloneVoiceIntegration:
         from mlx_audio.tts.utils import load_model
 
         input_path = validate_input_file(str(default_voice_path))
-        model = load_model("mlx-community/chatterbox-turbo-fp16")
+        model = load_model("mlx-community/chatterbox-turbo-fp16")  # type: ignore[arg-type]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_voice.safetensors"
 
             extract_and_save_conditionals(model, input_path, output_path)
 
-            # Load and verify structure
+            # Load and verify structure (safetensors returns dict)
             loaded = mx.load(str(output_path))
+            assert isinstance(loaded, dict)
 
             # Check required keys
             assert "t3_speaker_emb" in loaded
@@ -106,12 +107,13 @@ class TestCloneVoiceIntegration:
         from mlx_audio.tts.utils import load_model
 
         input_path = validate_input_file(str(default_voice_path))
-        model = load_model("mlx-community/chatterbox-turbo-fp16")
+        model = load_model("mlx-community/chatterbox-turbo-fp16")  # type: ignore[arg-type]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_voice.safetensors"
 
-            _, input_size, output_size = extract_and_save_conditionals(
+            # Tuple returned when return_sizes=True
+            _, input_size, output_size = extract_and_save_conditionals(  # type: ignore[misc]
                 model, input_path, output_path, return_sizes=True
             )
 
