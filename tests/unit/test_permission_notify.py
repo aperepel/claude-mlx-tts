@@ -18,9 +18,9 @@ from unittest.mock import MagicMock, Mock, patch, call
 
 import pytest
 
-# Import permission-notify.py module (has dash in filename, can't use normal import)
+# Import permission_notify.py module dynamically (it's not a package)
 HOOKS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "hooks")
-PERMISSION_NOTIFY_PATH = os.path.join(HOOKS_DIR, "permission-notify.py")
+PERMISSION_NOTIFY_PATH = os.path.join(HOOKS_DIR, "permission_notify.py")
 spec = importlib.util.spec_from_file_location("permission_notify", PERMISSION_NOTIFY_PATH)
 permission_notify = importlib.util.module_from_spec(spec)
 sys.modules['permission_notify'] = permission_notify
