@@ -656,6 +656,12 @@ def reset_voice_to_defaults(voice_name: str) -> None:
 # Available hook types that can have voice overrides
 HOOK_TYPES = ["stop", "permission_request"]
 
+# Human-friendly labels for hook types
+HOOK_LABELS = {
+    "stop": "Stop",
+    "permission_request": "Permission",
+}
+
 # Default prompts for each hook type
 HOOK_DEFAULT_PROMPTS = {
     "stop": "[clear throat] Attention on deck.",
@@ -1269,6 +1275,132 @@ def format_current_config() -> str:
     return f"Profile: {profile}\nStreaming interval: {interval}s"
 
 
+def cmd_full_status() -> None:
+    """Display comprehensive TTS configuration status.
+
+    Shows all TTS settings in a formatted view including:
+    - Active voice with format indicator
+    - Available voices
+    - Hook overrides (voice and prompt per hook type)
+    - Server status (running indicator, port, model)
+    - Audio processing summary for active voice
+    - Config file path
+    - TUI launch command
+    """
+    # Import server utils for status check (optional dependency)
+    is_server_alive = None
+    try:
+        from mlx_server_utils import (
+            is_server_alive as _is_server_alive,
+            TTS_SERVER_PORT,
+            MLX_MODEL,
+        )
+        is_server_alive = _is_server_alive
+    except ImportError:
+        TTS_SERVER_PORT = 21099
+        MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"
+
+    # Get all configuration data
+    active_voice = get_active_voice()
+    available_voices = discover_voices()
+    voice_format = get_voice_format(active_voice)
+    config_path = get_config_path().resolve()
+    compressor = get_effective_compressor(active_voice)
+    limiter = get_effective_limiter(active_voice)
+
+    # Format voice format indicator
+    format_indicator = ""
+    if voice_format == "safetensors":
+        format_indicator = " [embedded]"
+    elif voice_format == "wav":
+        format_indicator = " [wav]"
+
+    # Check server status
+    if is_server_alive is not None:
+        server_running = is_server_alive()
+    else:
+        server_running = False
+
+    # Build output
+    print("TTS Configuration")
+    print("═" * 67)
+    print()
+
+    # Voice Settings
+    print("Voice Settings")
+    print(f"  Active Voice: {active_voice}{format_indicator}")
+    print(f"  Available: {', '.join(available_voices)}")
+    print()
+
+    # Hook Overrides
+    print("Hook Overrides")
+    for hook_type in HOOK_TYPES:
+        label = HOOK_LABELS.get(hook_type, hook_type)
+        hook_voice = get_hook_voice(hook_type)
+        effective_prompt = get_effective_hook_prompt(hook_type)
+
+        # Show voice (or 'default' if inheriting)
+        voice_display = hook_voice if hook_voice else "default"
+
+        # Truncate prompt if too long
+        max_prompt_len = 45
+        if len(effective_prompt) > max_prompt_len:
+            prompt_display = effective_prompt[:max_prompt_len - 3] + "..."
+        else:
+            prompt_display = effective_prompt
+
+        print(f"  {label + ':':<12} {voice_display:<10} → \"{prompt_display}\"")
+    print()
+
+    # Server Status
+    print("Server Status")
+    if server_running:
+        status_indicator = "● Running"
+    else:
+        status_indicator = "○ Stopped"
+    print(f"  Status: {status_indicator}")
+    print(f"  Port:   {TTS_SERVER_PORT}")
+    print(f"  Model:  {MLX_MODEL}")
+    print()
+
+    # Audio Processing (for active voice)
+    print(f"Audio Processing ({active_voice})")
+
+    # Compressor summary
+    if compressor.get("enabled", True):
+        comp_summary = (
+            f"enabled (input: {compressor.get('input_gain_db', 0)}dB, "
+            f"threshold: {compressor.get('threshold_db', -18)}dB, "
+            f"ratio: {compressor.get('ratio', 3.0)}:1, "
+            f"makeup: {compressor.get('gain_db', 8)}dB)"
+        )
+    else:
+        comp_summary = "disabled"
+    print(f"  Compressor: {comp_summary}")
+
+    # Limiter summary
+    if limiter.get("enabled", True):
+        lim_summary = f"enabled (threshold: {limiter.get('threshold_db', -0.5)}dB)"
+    else:
+        lim_summary = "disabled"
+    print(f"  Limiter:    {lim_summary}")
+
+    # Master gain
+    master_gain = compressor.get("master_gain_db", 0.0)
+    print(f"  Master:     {master_gain}dB")
+    print()
+
+    # Config path
+    print(f"Config: {config_path}")
+    print()
+
+    # TUI command
+    print("─" * 67)
+    print("Open TUI in a new terminal:")
+    plugin_root = _PLUGIN_ROOT.resolve()
+    print(f"  cd {plugin_root} && uv run --extra mlx python scripts/tts_tui.py")
+
+
 def cmd_show() -> None:
     """Show current configuration."""
     print("Current TTS Configuration:")
@@ -1354,12 +1486,14 @@ def cmd_list_defaults() -> None:
 def main() -> None:
     """CLI entry point."""
     if len(sys.argv) < 2:
-        cmd_status()
+        cmd_full_status()
         return
 
     command = sys.argv[1].lower()
 
-    if command == "status":
+    if command == "full-status":
+        cmd_full_status()
+    elif command == "status":
         cmd_status()
     elif command == "show":
         cmd_show()
@@ -1371,7 +1505,7 @@ def main() -> None:
         cmd_list_defaults()
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
-        print("Usage: tts-config.py [status|show|capture-defaults|list-defaults]", file=sys.stderr)
+        print("Usage: tts-config.py [full-status|status|show|capture-defaults|list-defaults]", file=sys.stderr)
         sys.exit(1)
 
 
