@@ -240,6 +240,7 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
+        assert metrics is not None
         assert "ttft" in metrics
         assert isinstance(metrics["ttft"], float)
         assert metrics["ttft"] >= 0
@@ -256,6 +257,7 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
+        assert metrics is not None
         assert "gen_time" in metrics
         assert isinstance(metrics["gen_time"], float)
         assert metrics["gen_time"] >= 0
@@ -274,6 +276,7 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
+        assert metrics is not None
         assert "chunks" in metrics
         assert isinstance(metrics["chunks"], int)
         assert metrics["chunks"] == 3  # Our mock yields 3 chunks
@@ -290,6 +293,7 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
+        assert metrics is not None
         assert "rtf" in metrics
         assert isinstance(metrics["rtf"], float)
 
@@ -305,6 +309,7 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
+        assert metrics is not None
         assert "audio_duration" in metrics
         assert isinstance(metrics["audio_duration"], float)
         # 3 chunks * 12000 samples / 24000 Hz = 1.5 seconds
@@ -322,6 +327,7 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
+        assert metrics is not None
         assert "play_time" in metrics
         assert isinstance(metrics["play_time"], float)
         assert metrics["play_time"] >= 0
@@ -341,6 +347,7 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
+        assert metrics is not None
         assert "play_time" in metrics
         assert metrics["play_time"] == 0
         assert not mock_player.wait_for_drain.called
