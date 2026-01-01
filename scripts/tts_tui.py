@@ -1343,8 +1343,8 @@ class HookSettingsWidget(Container):
         if event.state == WorkerState.SUCCESS:
             result = event.worker.result
             self.is_playing = False
-            if not result.get("success"):
-                error = result.get("error") or result.get("stderr", "")[:100]
+            if result is None or not result.get("success"):
+                error = result.get("error") or result.get("stderr", "")[:100] if result else "Unknown error"
                 self.notify(f"TTS failed: {error}", severity="error")
         elif event.state in (WorkerState.ERROR, WorkerState.CANCELLED):
             self.is_playing = False
@@ -1520,10 +1520,10 @@ class PreviewWidget(Container):
         if event.state == WorkerState.SUCCESS:
             result = event.worker.result
             self.is_playing = False
-            if result.get("success"):
+            if result is not None and result.get("success"):
                 self.status_message = ""
             else:
-                error = result.get("error") or result.get("stderr", "")[:100]
+                error = result.get("error") or result.get("stderr", "")[:100] if result else "Unknown error"
                 self.status_message = "Error"
                 self.notify(f"TTS failed: {error}", severity="error")
         elif event.state in (WorkerState.ERROR, WorkerState.CANCELLED):
@@ -1860,7 +1860,9 @@ class CloneLabWidget(Container):
             self.is_cloning = False
             self.query_one("#clone-loading").display = False
 
-            if result.get("success"):
+            if result is None:
+                self._show_failure("Unknown error")
+            elif result.get("success"):
                 voice_name = result.get("voice_name", "")
                 output = result.get("output", "")
 
