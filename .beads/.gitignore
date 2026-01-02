@@ -1,4 +1,4 @@
-# SQLite databases (local only)
+# SQLite databases
 *.db
 *.db?*
 *.db-journal
@@ -11,8 +11,9 @@ daemon.log
 daemon.pid
 bd.sock
 sync-state.json
+last-touched
 
-# Local version tracking
+# Local version tracking (prevents upgrade notification spam after git ops)
 .local_version
 
 # Legacy database files
@@ -36,3 +37,8 @@ beads.right.meta.json
 # contributors to accidentally commit upstream issue databases.
 # The JSONL files (issues.jsonl, interactions.jsonl) and config files
 # are tracked by git by default since no pattern above ignores them.
+
+# Protected branch workflow: issues.jsonl and metadata.json live only in beads-sync
+# They are committed by the daemon to the sync branch, not feature/main branches
+issues.jsonl
+metadata.json
