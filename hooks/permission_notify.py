@@ -9,7 +9,6 @@ Triggers when:
 Does NOT auto-approve - just speaks a notification and lets normal permission flow continue.
 """
 import json
-import logging
 import os
 import sys
 from datetime import datetime
@@ -23,19 +22,9 @@ sys.path.insert(0, SCRIPTS_DIR)
 # LOGGING SETUP
 # =============================================================================
 
-LOG_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "logs")
-LOG_FILE = os.path.join(LOG_DIR, "permission-notify.log")
+from plugin_logging import setup_plugin_logging, LOG_DIR
 
-os.makedirs(LOG_DIR, exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-    ]
-)
-log = logging.getLogger(__name__)
+log = setup_plugin_logging()
 
 # =============================================================================
 # CONFIGURATION
@@ -54,7 +43,7 @@ MIN_AUTO_APPROVED_TOOLS = int(os.environ.get("PERMISSION_MIN_TOOLS", "3"))
 NOTIFY_COOLDOWN_SECS = int(os.environ.get("PERMISSION_COOLDOWN", "60"))
 
 # Path to track last notification time
-NOTIFY_TIMESTAMP_FILE = os.path.join(LOG_DIR, ".last_permission_notify")
+NOTIFY_TIMESTAMP_FILE = LOG_DIR / ".last_permission_notify"
 
 # =============================================================================
 # IMPLEMENTATION

@@ -11,7 +11,6 @@ File format:
 
 Supports natural language duration parsing via Claude CLI (haiku model).
 """
-import logging
 import os
 import re
 import subprocess
@@ -20,22 +19,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
-# Plugin-local config and logging directories
+# Plugin-local config directory
 _PLUGIN_ROOT = Path(__file__).parent.parent
 _CONFIG_DIR = _PLUGIN_ROOT / ".config"
 MUTE_FILE = _CONFIG_DIR / "mute_until"
 
 # Logging setup
-LOG_DIR = _PLUGIN_ROOT / "logs"
-LOG_FILE = LOG_DIR / "tts-mute.log"
-LOG_DIR.mkdir(exist_ok=True)
+from plugin_logging import setup_plugin_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.FileHandler(LOG_FILE)],
-)
-log = logging.getLogger(__name__)
+log = setup_plugin_logging()
 
 # Keywords that trigger unmute
 UNMUTE_KEYWORDS = ["resume", "off", "unmute", "cancel"]

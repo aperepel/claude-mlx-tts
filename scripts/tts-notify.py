@@ -10,7 +10,6 @@ Triggers when:
 Uses macOS 'say' by default. Install MLX extra for voice cloning: uv sync --extra mlx
 """
 import json
-import logging
 import re
 import subprocess
 import os
@@ -21,19 +20,9 @@ from datetime import datetime
 # LOGGING SETUP
 # =============================================================================
 
-LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
-LOG_FILE = os.path.join(LOG_DIR, "tts-notify.log")
+from plugin_logging import setup_plugin_logging
 
-os.makedirs(LOG_DIR, exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-    ]
-)
-log = logging.getLogger(__name__)
+log = setup_plugin_logging()
 
 # =============================================================================
 # CONFIGURATION - Edit these to customize behavior
