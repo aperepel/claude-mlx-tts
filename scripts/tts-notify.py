@@ -171,7 +171,7 @@ def should_trigger_tts(transcript_path: str) -> tuple[bool, str, int, float, boo
 
     # Option A: Skip TTS if this turn ran a TTS script via Bash
     # Check assistant tool calls for our script names (more reliable than parsing user message)
-    TTS_SCRIPTS = ["say.sh", "summary-say.sh", "tts-start.sh", "tts-stop.sh", "tts-status.sh", "tts-init.sh"]
+    TTS_SCRIPTS = ["say.sh", "summary-say.sh", "tts-start.sh", "tts-stop.sh", "tts-status.sh", "tts-init.sh", "tts-mute.sh"]
     for entry in entries[last_user_idx:]:
         if entry.get("type") != "assistant":
             continue
@@ -314,6 +314,17 @@ def main():
     if hook_input.get("stop_hook_active", False):
         log.info("Stop hook already active, preventing recursion")
         return
+
+    # Check if TTS is muted
+    try:
+        from tts_mute import is_muted, get_mute_status, format_remaining_time
+        if is_muted():
+            status = get_mute_status()
+            remaining = format_remaining_time(status.remaining_seconds)
+            log.info(f"TTS muted ({remaining} remaining), skipping")
+            return
+    except ImportError:
+        pass  # tts_mute not available, continue normally
 
     transcript_path = hook_input.get("transcript_path", "")
 

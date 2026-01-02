@@ -1332,6 +1332,24 @@ def cmd_full_status() -> None:
     print(f"  Available: {', '.join(available_voices)}")
     print()
 
+    # Mute Status
+    try:
+        from tts_mute import get_mute_status, format_remaining_time
+        mute_status = get_mute_status()
+        if mute_status.is_muted:
+            remaining = format_remaining_time(mute_status.remaining_seconds)
+            if mute_status.expires_at is not None:
+                from datetime import datetime
+                expires_dt = datetime.fromtimestamp(mute_status.expires_at)
+                expires_str = expires_dt.strftime("%I:%M %p")
+                print(f"Mute Status: MUTED for {remaining} (until {expires_str})")
+            else:
+                print("Mute Status: MUTED indefinitely")
+            print("  To resume: /tts-mute resume")
+            print()
+    except ImportError:
+        pass  # tts_mute not available
+
     # Hook Overrides
     print("Hook Overrides")
     for hook_type in HOOK_TYPES:
