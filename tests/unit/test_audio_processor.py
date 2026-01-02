@@ -744,7 +744,8 @@ class TestOLAProcessorBasicBehavior:
             def __init__(self, data):
                 self._data = data
                 self.__module__ = 'mlx.core'
-            def __array__(self):
+            def __array__(self, dtype=None, copy=None):
+                # NumPy 2.0+ requires dtype and copy keyword arguments
                 return self._data
             def __len__(self):
                 return len(self._data)

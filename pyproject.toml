@@ -45,6 +45,13 @@ package = false
 testpaths = ["tests/unit"]
 # To run all tests including integration: uv run pytest tests/
 # To run only integration tests: uv run pytest tests/integration/
+# Suppress deprecation warnings from audioread (librosa dependency) for Python 3.12
+# These modules were removed in Python 3.13; audioread 3.1.0 handles this automatically
+filterwarnings = [
+    "ignore:'aifc' is deprecated:DeprecationWarning:audioread",
+    "ignore:'audioop' is deprecated:DeprecationWarning:audioread",
+    "ignore:'sunau' is deprecated:DeprecationWarning:audioread",
+]
 
 [dependency-groups]
 dev = [
