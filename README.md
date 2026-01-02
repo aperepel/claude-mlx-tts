@@ -12,11 +12,12 @@ When Claude finishes deep work, hear a brief AI-generated summary spoken aloud�
 
 ## Features
 
-- **Streaming TTS** - Audio starts in ~250ms instead of waiting for full generation
+- **Streaming TTS** - Audio starts in ~200ms instead of waiting for full generation
+- **6 bundled voices** - `default`, `alex`, `jerry`, `scarlett`, `snoop`, `c3po` ready to use
+- **Customization TUI** - Full terminal UI for voice, audio, and prompt configuration
+- **Voice cloning** - Create new voices from WAV samples via Clone Lab
 - **Dynamic compressor** - Professional-grade audio processing for consistent, punchy volume
 - **AI-powered summaries** - Condenses Claude's response into a 10-15 word spoken update
-- **Attention grabber** - "[clear throat] Attention on deck..." before each summary
-- **Voice cloning** - Uses MLX Chatterbox Turbo (default voice included, or clone your own)
 - **Smart detection** - Only triggers on deep work (15+ seconds, 2+ tool calls, or thinking mode)
 - **Zero config** - Works out of the box with bundled voice
 
@@ -90,44 +91,41 @@ Or trigger deep work to hear an automatic summary:
 
 ## Custom Voice
 
-Want to use your own voice? See [RECORDING.md](RECORDING.md) for instructions on creating a custom voice reference.
+Clone your voice in seconds using Clone Lab:
 
-Replace `assets/default_voice.wav` with your recording.
+1. Record a WAV sample (see [RECORDING.md](RECORDING.md) for tips)
+2. Run `/tts-status` and launch the TUI
+3. Open **Clone Lab** tab → select your WAV → create voice
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `/tts-init` | Install MLX dependencies and download model (~4GB) |
+| `/tts-status` | Show config overview, available voices, and server status |
+| `/tts-mute [duration]` | Mute TTS (`30m`, `until 5pm`, or indefinitely) |
 | `/say <text>` | Speak text directly (smoke test) |
 | `/summary-say <text>` | Summarize long text and speak it |
 | `/tts-start` | Start server (pre-warms model for faster responses) |
 | `/tts-stop` | Stop server (reclaims ~4GB GPU memory) |
-| `/tts-status` | Check if server is running |
 
 ## Configuration
 
-Edit `scripts/tts-notify.py`:
+Run `/tts-status` and launch the TUI to configure:
 
-```python
-MIN_DURATION_SECS = 15      # Response duration threshold
-MIN_TOOL_CALLS = 2          # Tool call threshold
-ATTENTION_PREFIX = "[clear throat] Attention on deck."
-MLX_SPEED = 1.6             # Playback speed
-MLX_MODEL = "mlx-community/chatterbox-turbo-fp16"  # Model to use
-```
+- **Voice Lab** — Per-voice audio controls (compressor, limiter, gain)
+- **Clone Lab** — Create voices from WAV samples
+- **Prompt Lab** — Customize voice and message per notification type
 
 ### Model Options
 
-The default model is `chatterbox-turbo-fp16` (~4GB). For smaller memory footprint, try:
+The default model is `chatterbox-turbo-fp16` (~4GB). For smaller memory footprint:
 
 | Model | Size | Quality |
 |-------|------|---------|
 | `mlx-community/chatterbox-turbo-fp16` | ~4GB | Best |
 | `mlx-community/chatterbox-turbo-8bit` | ~2GB | Good |
 | `mlx-community/chatterbox-turbo-4bit` | ~1GB | Acceptable |
-
-To use a different model, edit `MLX_MODEL` in `scripts/tts-notify.py` and run `/tts-init` to download it.
 
 ## Troubleshooting
 
