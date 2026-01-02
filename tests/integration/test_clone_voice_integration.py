@@ -17,27 +17,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"
 
 def _get_voice_wav_path() -> Path:
     """Get path to a voice WAV file for testing."""
-    scripts_dir = Path(__file__).parent.parent.parent / "scripts"
-    plugin_root = scripts_dir.parent
-    return plugin_root / "assets" / "default_voice.wav"
+    return Path(__file__).parent.parent / "fixtures" / "voices" / "default_voice.wav"
 
 
-# Skip all tests if no WAV file exists (project uses pre-extracted .safetensors)
-_voice_wav = _get_voice_wav_path()
-_skip_no_wav = pytest.mark.skipif(
-    not _voice_wav.exists(),
-    reason=f"Voice WAV file not found: {_voice_wav} (project uses .safetensors)"
-)
-
-
-@_skip_no_wav
 class TestCloneVoiceIntegration:
     """Integration tests for clone_voice with real MLX model."""
 
     @pytest.fixture
     def default_voice_path(self):
         """Path to the default voice WAV file."""
-        return _voice_wav
+        path = _get_voice_wav_path()
+        assert path.exists(), f"Test fixture missing: {path}"
+        return path
 
     def test_extract_conditionals_with_real_model(self, default_voice_path):
         """Test extracting conditionals from real WAV with real model."""
