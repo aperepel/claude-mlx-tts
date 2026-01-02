@@ -19,13 +19,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
+from plugin_logging import setup_plugin_logging  # noqa: E402
+
 # Plugin-local config directory
 _PLUGIN_ROOT = Path(__file__).parent.parent
 _CONFIG_DIR = _PLUGIN_ROOT / ".config"
 MUTE_FILE = _CONFIG_DIR / "mute_until"
-
-# Logging setup
-from plugin_logging import setup_plugin_logging
 
 log = setup_plugin_logging()
 

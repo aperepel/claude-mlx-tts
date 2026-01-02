@@ -244,7 +244,7 @@ class TestSaveConditionals:
 
     def test_saves_as_safetensors(self):
         """save_conditionals should save data in safetensors format."""
-        from voice_cache import save_conditionals, get_cache_path
+        from voice_cache import save_conditionals
 
         import mlx.core as mx
         mock_conds = MagicMock()
@@ -556,7 +556,7 @@ class TestVoiceCachePerformance:
     def test_cached_load_under_10ms(self):
         """Loading conditionals from disk cache should be <10ms."""
         import time
-        from voice_cache import load_conditionals, save_conditionals, get_cache_path
+        from voice_cache import load_conditionals, save_conditionals
 
         import mlx.core as mx
 
@@ -616,7 +616,7 @@ class TestLoadConditionalsFromFile:
 
     def test_loads_safetensors_directly(self):
         """load_conditionals_from_file should load pre-computed conditionals from safetensors."""
-        from voice_cache import load_conditionals_from_file, save_conditionals, CACHE_DIR
+        from voice_cache import load_conditionals_from_file
 
         import mlx.core as mx
 
@@ -789,7 +789,7 @@ class TestGetVoiceConditionals:
             with patch("voice_cache._PLUGIN_ROOT", Path(tmpdir)):
                 with patch("voice_cache.get_or_prepare_conditionals") as mock_get:
                     mock_get.return_value = mock_conds
-                    result = get_voice_conditionals(mock_model, "test_voice")
+                    _result = get_voice_conditionals(mock_model, "test_voice")
 
             # Should have called get_or_prepare_conditionals for wav
             mock_get.assert_called_once()

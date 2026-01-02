@@ -11,9 +11,8 @@ Run with: uv run pytest tests/unit/test_streaming_audio_player.py -v
 """
 import os
 import sys
-import time
 import struct
-from unittest.mock import MagicMock, patch, PropertyMock, call
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -81,7 +80,6 @@ class TestAudioPlayerIntegration:
     def test_creates_audio_player_with_sample_rate(self):
         """Should create AudioPlayer with correct sample rate from header."""
         from mlx_server_utils import play_streaming_http
-        from streaming_wav_parser import WavHeader
 
         audio = np.sin(np.linspace(0, 2 * np.pi, 2400)).astype(np.float32)
         wav_bytes = create_wav_bytes(audio, sample_rate=24000)
@@ -376,7 +374,7 @@ class TestPlaybackLifecycle:
             with patch("mlx_server_utils.ensure_server_running"):
                 with patch("mlx_server_utils.AudioPlayer", return_value=mock_player):
                     # Should not raise - handles short audio gracefully
-                    metrics = play_streaming_http("Hi")
+                    _metrics = play_streaming_http("Hi")
 
         # For short audio that didn't auto-start, should call start_stream
         mock_player.start_stream.assert_called()

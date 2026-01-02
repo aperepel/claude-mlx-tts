@@ -13,16 +13,16 @@ import os
 import sys
 from datetime import datetime
 
-# Add scripts directory to path for importing TTS functions
+# Add scripts directory to path for importing TTS functions (must be before local imports)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "scripts")
 sys.path.insert(0, SCRIPTS_DIR)
 
+from plugin_logging import setup_plugin_logging, LOG_DIR  # noqa: E402
+
 # =============================================================================
 # LOGGING SETUP
 # =============================================================================
-
-from plugin_logging import setup_plugin_logging, LOG_DIR
 
 log = setup_plugin_logging()
 

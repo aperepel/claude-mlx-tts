@@ -75,8 +75,6 @@ class StreamingWavParser:
         """Number of audio data bytes not yet read."""
         if self._header is None:
             return 0
-        # Data in buffer minus header (if still present) = unread audio
-        buffer_audio_bytes = len(self._buffer)
         return self._header.data_size - self._bytes_read
 
     def feed(self, data: bytes) -> None:
@@ -179,7 +177,6 @@ class StreamingWavParser:
 
         # Parse format info
         # fmt chunk: <size:4><format:2><channels:2><sample_rate:4><byte_rate:4><block_align:2><bits:2>
-        fmt_chunk_size = struct.unpack_from("<I", header_bytes, 16)[0]
         audio_format = struct.unpack_from("<H", header_bytes, 20)[0]
         channels = struct.unpack_from("<H", header_bytes, 22)[0]
         sample_rate = struct.unpack_from("<I", header_bytes, 24)[0]
