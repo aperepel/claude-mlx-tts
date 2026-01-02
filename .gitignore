@@ -8,3 +8,4 @@ logs/
 !assets/*.wav
 .DS_Store
 typings/
+.beads/last-touched
