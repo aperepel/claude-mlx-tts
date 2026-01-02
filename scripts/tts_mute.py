@@ -245,9 +245,9 @@ def format_remaining_time(seconds: float | None) -> str:
         return "indefinitely"
 
     if seconds < 60:
-        return f"{int(seconds)} seconds"
+        return f"{int(round(seconds))} seconds"
     elif seconds < 3600:
-        minutes = int(seconds / 60)
+        minutes = int(round(seconds / 60))
         return f"{minutes} minute{'s' if minutes != 1 else ''}"
     elif seconds < 86400:
         hours = seconds / 3600
