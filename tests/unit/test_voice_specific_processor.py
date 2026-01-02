@@ -10,11 +10,10 @@ Run with: uv run pytest tests/unit/test_voice_specific_processor.py -v
 """
 import os
 import sys
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 import struct
 
 import numpy as np
-import pytest
 
 # Add scripts to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))

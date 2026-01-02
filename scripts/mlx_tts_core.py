@@ -25,7 +25,6 @@ Usage:
 import os
 import time
 import logging
-from pathlib import Path
 from typing import Any
 
 # Import AudioPlayer for streaming playback

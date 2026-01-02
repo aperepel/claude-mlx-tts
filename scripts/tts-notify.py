@@ -174,7 +174,7 @@ def should_trigger_tts(transcript_path: str) -> tuple[bool, str, int, float, boo
                 continue
             command = block.get("input", {}).get("command", "")
             if any(script in command for script in TTS_SCRIPTS):
-                log.info(f"Skipping TTS: turn included TTS script in Bash call")
+                log.info("Skipping TTS: turn included TTS script in Bash call")
                 return False, "", 0, 0.0, False
 
     thinking_triggered = any(kw in user_text_lower for kw in THINKING_KEYWORDS)

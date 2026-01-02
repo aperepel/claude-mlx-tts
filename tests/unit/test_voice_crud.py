@@ -9,12 +9,11 @@ Tests for:
 
 Run with: uv run pytest tests/unit/test_voice_crud.py -v
 """
-import json
 import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 

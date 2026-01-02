@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 # Add scripts to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
@@ -77,7 +76,7 @@ class TestGetMuteStatus:
 
     def test_get_mute_status_not_muted_when_no_file(self):
         """get_mute_status should return not muted when file doesn't exist."""
-        from tts_mute import get_mute_status, MuteStatus
+        from tts_mute import get_mute_status
 
         with tempfile.TemporaryDirectory() as tmpdir:
             mute_file = Path(tmpdir) / "mute_until"
@@ -254,7 +253,7 @@ class TestSetMute:
 
     def test_set_mute_indefinite_with_none(self):
         """set_mute(None) should create indefinite mute."""
-        from tts_mute import set_mute, is_muted
+        from tts_mute import set_mute
 
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)

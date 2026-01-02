@@ -249,7 +249,7 @@ def get_active_profile() -> str:
     return config.get("active_profile", "default")
 
 
-def get_streaming_interval(profile: str = None) -> float:
+def get_streaming_interval(profile: str | None = None) -> float:
     """Get the streaming interval for a profile (default: active profile).
 
     Can be overridden via TTS_STREAMING_INTERVAL env var for experimentation.
@@ -267,7 +267,7 @@ def get_streaming_interval(profile: str = None) -> float:
     return profile_config.get("streaming_interval", DEFAULT_STREAMING_INTERVAL)
 
 
-def set_streaming_interval(interval: float, profile: str = None) -> None:
+def set_streaming_interval(interval: float, profile: str | None = None) -> None:
     """Set the streaming interval for a profile."""
     if interval < MIN_STREAMING_INTERVAL or interval > MAX_STREAMING_INTERVAL:
         raise ValueError(
@@ -559,7 +559,7 @@ def get_voice_limiter(voice_name: str) -> dict:
     return {**DEFAULT_LIMITER, **bundled_limiter, **voice_limiter}
 
 
-def get_effective_compressor(voice_name: str = None) -> dict:
+def get_effective_compressor(voice_name: str | None = None) -> dict:
     """Get effective compressor settings for a voice.
 
     Uses cascading resolution: defaults -> voice-specific overrides.
@@ -570,7 +570,7 @@ def get_effective_compressor(voice_name: str = None) -> dict:
     return get_voice_compressor(voice_name)
 
 
-def get_effective_limiter(voice_name: str = None) -> dict:
+def get_effective_limiter(voice_name: str | None = None) -> dict:
     """Get effective limiter settings for a voice.
 
     Uses cascading resolution: defaults -> voice-specific overrides.
@@ -880,7 +880,6 @@ def delete_voice(name: str) -> None:
     Raises:
         ValueError: If voice name is invalid, not found, or is the last voice
     """
-    import shutil
 
     if not VOICE_NAME_PATTERN.match(name):
         raise ValueError(f"Invalid voice name: {name}")
@@ -1478,7 +1477,7 @@ def cmd_capture_defaults(voice_name: str | None = None) -> None:
             captured = capture_voice_defaults(name)
             print(f"  ✓ {name}")
 
-        print(f"\nCaptured defaults saved to config.")
+        print("\nCaptured defaults saved to config.")
 
 
 def cmd_list_defaults() -> None:

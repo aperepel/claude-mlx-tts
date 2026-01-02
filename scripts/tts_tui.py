@@ -72,9 +72,6 @@ class WavPathAutoComplete(PathAutoComplete):
     # File extensions to show (lowercase)
     ALLOWED_EXTENSIONS = {".wav"}
 
-    # Type annotation for inherited cache attribute
-    _directory_cache: dict[str, list[os.DirEntry[str]]]
-
     def _expand_tilde(self, path_str: str) -> str:
         """Expand ~ to home directory path."""
         if path_str.startswith("~"):
@@ -462,7 +459,7 @@ class InputModal(ModalScreen):
     def compose(self) -> ComposeResult:
         action_label = "Copy" if self.action_type == "copy" else "Rename"
         with Vertical():
-            yield Static(self.title, classes="modal-title")
+            yield Static(self.title or "", classes="modal-title")
             yield Static(f'{action_label} "{self.voice_name}" as:')
             with Horizontal(classes="input-row"):
                 yield Input(
@@ -913,11 +910,12 @@ class CompressorWidget(Container):
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle preset selection."""
         if event.select.id == "preset-select" and event.value != "custom":
-            preset = COMPRESSOR_PRESETS.get(event.value)
-            if preset:
-                self._apply_preset(preset)
-                if self._initialized:
-                    self.notify("Voice settings saved", severity="information")
+            if isinstance(event.value, str):
+                preset = COMPRESSOR_PRESETS.get(event.value)
+                if preset:
+                    self._apply_preset(preset)
+                    if self._initialized:
+                        self.notify("Voice settings saved", severity="information")
 
     def _apply_preset(self, preset: dict) -> None:
         """Apply a compressor preset."""
@@ -1046,11 +1044,12 @@ class LimiterWidget(Container):
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle preset selection."""
         if event.select.id == "limiter-preset-select" and event.value != "custom":
-            preset = LIMITER_PRESETS.get(event.value)
-            if preset:
-                self._apply_preset(preset)
-                if self._initialized:
-                    self.notify("Voice settings saved", severity="information")
+            if isinstance(event.value, str):
+                preset = LIMITER_PRESETS.get(event.value)
+                if preset:
+                    self._apply_preset(preset)
+                    if self._initialized:
+                        self.notify("Voice settings saved", severity="information")
 
     def _apply_preset(self, preset: dict) -> None:
         """Apply a limiter preset."""
@@ -2046,10 +2045,11 @@ class SystemScreen(Screen):
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle setting changes."""
         if event.select.id == "interval-select" and event.value is not None:
-            try:
-                set_streaming_interval(event.value)
-            except ValueError as e:
-                self.notify(str(e), severity="error")
+            if isinstance(event.value, (int, float)):
+                try:
+                    set_streaming_interval(float(event.value))
+                except ValueError as e:
+                    self.notify(str(e), severity="error")
 
 
 class AboutScreen(Screen):
@@ -2204,10 +2204,11 @@ class MainScreen(Screen):
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle setting changes."""
         if event.select.id == "interval-select" and event.value is not None:
-            try:
-                set_streaming_interval(event.value)
-            except ValueError as e:
-                self.notify(str(e), severity="error")
+            if isinstance(event.value, (int, float)):
+                try:
+                    set_streaming_interval(float(event.value))
+                except ValueError as e:
+                    self.notify(str(e), severity="error")
 
     def on_preview_widget_audio_reset(self, event: PreviewWidget.AudioReset) -> None:
         """Handle audio reset - refresh compressor and limiter widgets."""

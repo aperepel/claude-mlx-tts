@@ -13,7 +13,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 # Add scripts to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
@@ -28,12 +27,9 @@ class TestPerVoiceConfigIntegration:
             discover_voices,
             get_active_voice,
             set_active_voice,
-            get_voice_config,
             set_voice_config,
             get_effective_compressor,
             get_effective_limiter,
-            save_config,
-            load_config,
             DEFAULT_COMPRESSOR,
             DEFAULT_LIMITER,
         )

@@ -411,7 +411,6 @@ def stream_tts_http(
         ServerStartError: If server fails to start.
         TTSRequestError: If TTS request fails.
     """
-    import numpy as np
 
     if not text or not text.strip():
         log.warning("Empty text, skipping TTS")
@@ -425,7 +424,7 @@ def stream_tts_http(
     else:
         url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
-    payload = {
+    payload: dict[str, str | float] = {
         "input": text,
         "model": MLX_MODEL,
     }
@@ -514,7 +513,6 @@ def play_streaming_http(
         ServerStartError: If server fails to start.
         TTSRequestError: If TTS request fails.
     """
-    import numpy as np
 
     # Handle empty text
     if not text or not text.strip():
@@ -537,7 +535,7 @@ def play_streaming_http(
     else:
         url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
-    payload = {
+    payload: dict[str, str | float] = {
         "input": text,
         "model": MLX_MODEL,
     }

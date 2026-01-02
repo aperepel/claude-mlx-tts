@@ -9,8 +9,7 @@ Run with: uv run pytest tests/unit/test_tts_server_streaming.py -v
 import os
 import struct
 import sys
-from unittest.mock import MagicMock, patch, AsyncMock
-from io import BytesIO
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest

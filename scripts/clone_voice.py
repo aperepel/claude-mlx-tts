@@ -289,7 +289,7 @@ def main(args: list[str] | None = None) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     except ImportError as e:
-        print(f"Error: mlx_audio not installed. Run: uv sync --extra mlx", file=sys.stderr)
+        print("Error: mlx_audio not installed. Run: uv sync --extra mlx", file=sys.stderr)
         print(f"Details: {e}", file=sys.stderr)
         return 1
     except Exception as e:

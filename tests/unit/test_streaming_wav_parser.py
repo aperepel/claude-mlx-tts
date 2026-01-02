@@ -8,7 +8,6 @@ Run with: uv run pytest tests/unit/test_streaming_wav_parser.py -v
 """
 import os
 import sys
-import io
 import struct
 
 import numpy as np

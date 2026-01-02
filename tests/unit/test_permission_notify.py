@@ -22,6 +22,8 @@ import pytest
 HOOKS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "hooks")
 PERMISSION_NOTIFY_PATH = os.path.join(HOOKS_DIR, "permission_notify.py")
 spec = importlib.util.spec_from_file_location("permission_notify", PERMISSION_NOTIFY_PATH)
+assert spec is not None, "Failed to load module spec"
+assert spec.loader is not None, "Module spec has no loader"
 permission_notify = importlib.util.module_from_spec(spec)
 sys.modules['permission_notify'] = permission_notify
 spec.loader.exec_module(permission_notify)
