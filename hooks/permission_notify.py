@@ -256,6 +256,17 @@ def main():
         log.warning("No transcript_path in hook input")
         sys.exit(1)
 
+    # Check if TTS is muted
+    try:
+        from tts_mute import is_muted, get_mute_status, format_remaining_time
+        if is_muted():
+            status = get_mute_status()
+            remaining = format_remaining_time(status.remaining_seconds)
+            log.info(f"TTS muted ({remaining} remaining), skipping")
+            sys.exit(1)
+    except ImportError:
+        pass  # tts_mute not available, continue normally
+
     # Check cooldown
     if is_within_cooldown():
         log.info("Within cooldown period, skipping notification")
