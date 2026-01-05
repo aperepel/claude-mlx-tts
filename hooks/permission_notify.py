@@ -207,11 +207,12 @@ def speak_say(message: str):
 
 
 def speak_mlx(message: str, voice: str | None = None):
-    """Speak using MLX voice cloning via HTTP server."""
+    """Speak using MLX voice cloning via HTTP server (non-blocking)."""
     try:
-        from mlx_server_utils import speak_mlx_http
-        log.info("MLX TTS (HTTP)")
-        speak_mlx_http(message, voice=voice)
+        from mlx_server_utils import speak_mlx_nonblocking
+        log.info("MLX TTS (HTTP, non-blocking)")
+        # Use non-blocking TTS so hook returns immediately
+        speak_mlx_nonblocking(message, voice=voice)
     except Exception as e:
         log.warning(f"MLX TTS failed: {e}, falling back to macOS say")
         speak_say(message)

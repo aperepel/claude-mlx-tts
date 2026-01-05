@@ -75,17 +75,14 @@ def _generate_mlx_speech_direct(text: str, voice_name: str | None = None, play: 
 
 
 def _generate_mlx_speech_http(text: str, voice_name: str | None = None):
-    """Generate speech using HTTP server (fast warm latency)."""
+    """Generate speech using HTTP server (fast warm latency, non-blocking)."""
     if not text or not text.strip():
         return
 
-    from mlx_server_utils import speak_mlx_http, ServerStartError, TTSRequestError
+    from mlx_server_utils import speak_mlx_nonblocking
 
-    try:
-        speak_mlx_http(text, voice=voice_name)
-    except (ServerStartError, TTSRequestError) as e:
-        log.warning(f"HTTP TTS failed: {e}, falling back to direct API")
-        _generate_mlx_speech_direct(text, voice_name=voice_name, play=True)
+    # Use non-blocking TTS so hook returns immediately
+    speak_mlx_nonblocking(text, voice=voice_name)
 
 
 # =============================================================================

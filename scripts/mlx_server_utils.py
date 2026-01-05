@@ -31,6 +31,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from typing import Any, Generator
 
@@ -669,6 +670,40 @@ def play_streaming_http(
     finally:
         if response is not None:
             response.close()
+
+
+# =============================================================================
+# Non-blocking TTS (for hooks)
+# =============================================================================
+
+def speak_mlx_nonblocking(message: str, voice: str | None = None) -> None:
+    """
+    Speak using MLX TTS in a background daemon thread.
+
+    This function returns immediately while audio plays in the background.
+    Used by hooks (stop, permission) to avoid blocking Claude Code's execution.
+
+    Args:
+        message: Text to convert to speech.
+        voice: Voice name to use. If None, server uses active voice from config.
+
+    Note:
+        Errors are logged via log.warning() but don't propagate to caller.
+        The daemon thread ensures the process can exit even if TTS is playing.
+    """
+    if not message or not message.strip():
+        log.warning("Empty message, skipping TTS")
+        return
+
+    def _speak():
+        try:
+            speak_mlx_http(message, voice=voice)
+        except Exception as e:
+            log.warning(f"Background TTS failed: {e}")
+
+    thread = threading.Thread(target=_speak, daemon=True)
+    thread.start()
+    log.debug(f"TTS started in background thread: {thread.name}")
 
 
 # =============================================================================
