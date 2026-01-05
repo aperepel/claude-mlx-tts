@@ -183,13 +183,13 @@ def register_streaming_endpoint(app, model_provider, model_name: str):
         # Initialize OLA + compressor/limiter processor
         audio_processor = None
         try:
-            from audio_processor import create_processor_with_ola
+            from audio_processor import create_processor_with_ola, DEFAULT_CROSSFADE_MS
             import tts_config
             compressor = tts_config.get_effective_compressor(voice)
             limiter = tts_config.get_effective_limiter(voice)
             audio_processor = create_processor_with_ola(
                 sample_rate=sample_rate,
-                crossfade_ms=20.0,  # Confirmed via listening tests
+                crossfade_ms=DEFAULT_CROSSFADE_MS,
                 input_gain_db=compressor.get("input_gain_db"),
                 threshold_db=compressor.get("threshold_db"),
                 ratio=compressor.get("ratio"),

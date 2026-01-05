@@ -156,24 +156,6 @@ def record_notification():
         pass
 
 
-def extract_tool_name(message: str) -> str:
-    """Extract tool name from permission message."""
-    # Message format: "Claude wants to use Bash" or similar
-    if "Bash" in message:
-        return "Bash"
-    if "Write" in message:
-        return "Write"
-    if "Edit" in message:
-        return "Edit"
-    if "Read" in message:
-        return "Read"
-    if "WebFetch" in message:
-        return "WebFetch"
-    if "Task" in message:
-        return "Task"
-    return "a tool"
-
-
 def is_mlx_available() -> bool:
     """Check if MLX audio is installed and at least one voice exists."""
     try:
@@ -250,8 +232,18 @@ def main():
     log.info("Permission hook invoked")
     hook_input = get_hook_input()
 
+    # Log full hook input for debugging (to understand what fields are available)
+    tool_name = hook_input.get("tool_name", "unknown")
+    log.info(f"Tool name from hook_input: {tool_name}")
+    log.info(f"Full hook_input keys: {list(hook_input.keys())}")
+    log.debug(f"Full hook_input: {json.dumps(hook_input, default=str)}")
+
+    # Skip TTS for AskUserQuestion - it's an interactive prompt, not a permission request
+    if tool_name == "AskUserQuestion":
+        log.info("Skipping TTS for AskUserQuestion tool")
+        sys.exit(1)
+
     transcript_path = hook_input.get("transcript_path", "")
-    message = hook_input.get("message", "")
 
     if not transcript_path:
         log.warning("No transcript_path in hook input")
@@ -267,17 +259,6 @@ def main():
             sys.exit(1)
     except ImportError:
         pass  # tts_mute not available, continue normally
-
-    # Check if another TTS session is active (prevents audio overlap)
-    # This handles cases like AskUserQuestion triggering permission hooks
-    # while a skill's TTS is already playing
-    try:
-        from tts_mute import is_voice_active
-        if is_voice_active():
-            log.info("Voice session active, skipping permission TTS (visual prompt still shows)")
-            sys.exit(1)
-    except ImportError:
-        pass  # is_voice_active not available, continue normally
 
     # Check cooldown
     if is_within_cooldown():
@@ -301,18 +282,7 @@ def main():
     )
 
     if should_notify:
-        tool_name = extract_tool_name(message)
         log.info(f"Triggering notification for tool: {tool_name}")
-
-        # Set voice_active IMMEDIATELY to prevent concurrent hooks from triggering
-        # This must happen before any TTS calls (there's ~100ms delay to speak_mlx_nonblocking)
-        try:
-            from tts_mute import set_voice_active
-            set_voice_active()
-            log.debug("Voice active flag set")
-        except ImportError:
-            pass
-
         record_notification()
         speak_notification(tool_name)
     else:

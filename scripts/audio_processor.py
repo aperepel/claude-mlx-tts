@@ -38,7 +38,9 @@ DEFAULT_MASTER_GAIN_DB = 0.0
 DEFAULT_ENABLED = True
 
 # OLA (Overlap-Add) defaults
-DEFAULT_CROSSFADE_MS = 20.0  # Crossfade duration in milliseconds
+# 10ms is optimal: 2 pitch periods for female voices (200Hz), 1.2 for male (120Hz)
+# Longer crossfades cause amplitude modulation ("wobble") from phase beating
+DEFAULT_CROSSFADE_MS = 10.0
 
 
 def get_compressor_config() -> dict:

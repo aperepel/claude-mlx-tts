@@ -266,16 +266,16 @@ def _generate_streaming_with_metrics(
     player = AudioPlayer(sample_rate=model.sample_rate) if play and AudioPlayer is not None else None
 
     # Initialize audio processor with OLA for seamless chunk stitching + compression/limiting
-    # Signal chain: OLA Crossfade (20ms) → Compressor → Limiter
+    # Signal chain: OLA Crossfade → Compressor → Limiter
     # OLA eliminates clicks at chunk boundaries; compressor/limiter normalize volume
     audio_processor = None
     try:
-        from audio_processor import create_processor_with_ola
+        from audio_processor import create_processor_with_ola, DEFAULT_CROSSFADE_MS
         compressor = tts_config.get_effective_compressor(voice_name)
         limiter = tts_config.get_effective_limiter(voice_name)
         audio_processor = create_processor_with_ola(
             sample_rate=model.sample_rate,
-            crossfade_ms=20.0,  # Confirmed via listening tests
+            crossfade_ms=DEFAULT_CROSSFADE_MS,
             input_gain_db=compressor.get("input_gain_db"),
             threshold_db=compressor.get("threshold_db"),
             ratio=compressor.get("ratio"),
