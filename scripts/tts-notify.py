@@ -293,7 +293,7 @@ def speak(message: str):
 
 
 def main():
-    log.info("Hook invoked")
+    log.info("Stop hook invoked")
     hook_input = get_hook_input()
 
     # Option B: Prevent infinite recursion via stop_hook_active flag
