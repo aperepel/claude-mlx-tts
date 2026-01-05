@@ -31,7 +31,6 @@ import logging
 import os
 import subprocess
 import sys
-import threading
 import time
 from typing import Any, Generator
 
@@ -678,32 +677,38 @@ def play_streaming_http(
 
 def speak_mlx_nonblocking(message: str, voice: str | None = None) -> None:
     """
-    Speak using MLX TTS in a background daemon thread.
+    Speak using MLX TTS in a detached subprocess.
 
-    This function returns immediately while audio plays in the background.
+    This function returns immediately while audio plays in a separate process.
     Used by hooks (stop, permission) to avoid blocking Claude Code's execution.
+
+    Unlike daemon threads, the subprocess continues running even after the
+    parent script exits, ensuring TTS completes successfully.
 
     Args:
         message: Text to convert to speech.
         voice: Voice name to use. If None, server uses active voice from config.
 
     Note:
-        Errors are logged via log.warning() but don't propagate to caller.
-        The daemon thread ensures the process can exit even if TTS is playing.
+        Errors are logged to the subprocess stderr but don't propagate to caller.
+        The subprocess is fully detached (start_new_session=True).
     """
     if not message or not message.strip():
         log.warning("Empty message, skipping TTS")
         return
 
-    def _speak():
-        try:
-            speak_mlx_http(message, voice=voice)
-        except Exception as e:
-            log.warning(f"Background TTS failed: {e}")
+    # Spawn a detached subprocess that will continue after parent exits
+    cmd = [sys.executable, __file__, "--http", message]
+    if voice:
+        cmd.extend(["--voice", voice])
 
-    thread = threading.Thread(target=_speak, daemon=True)
-    thread.start()
-    log.debug(f"TTS started in background thread: {thread.name}")
+    subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,  # Fully detach from parent
+    )
+    log.debug("TTS started in detached subprocess")
 
 
 # =============================================================================
@@ -801,12 +806,18 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: python mlx_server_utils.py <text> [--voice <voice_name>]", file=sys.stderr)
+        print("Usage: python mlx_server_utils.py [--http] <text> [--voice <voice_name>]", file=sys.stderr)
         sys.exit(1)
 
     # Parse arguments
     voice_name = None
+    use_http = False
     args = sys.argv[1:]
+
+    if "--http" in args:
+        use_http = True
+        args.remove("--http")
+
     if "--voice" in args:
         voice_idx = args.index("--voice")
         if voice_idx + 1 < len(args):
@@ -815,8 +826,10 @@ if __name__ == "__main__":
 
     text = " ".join(args)
 
-    # Always use speak_mlx for CLI - it correctly reads active voice from config.
-    # The HTTP server path (speak_mlx_http) is for hooks where we leverage
-    # the pre-warmed server, but it doesn't dynamically switch voices.
-    from mlx_tts_core import speak_mlx
-    speak_mlx(text, voice_name=voice_name)
+    if use_http:
+        # Use HTTP server path (for hooks that spawn this as subprocess)
+        speak_mlx_http(text, voice=voice_name)
+    else:
+        # Use direct MLX path - correctly reads active voice from config
+        from mlx_tts_core import speak_mlx
+        speak_mlx(text, voice_name=voice_name)
