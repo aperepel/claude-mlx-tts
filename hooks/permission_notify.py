@@ -268,6 +268,17 @@ def main():
     except ImportError:
         pass  # tts_mute not available, continue normally
 
+    # Check if another TTS session is active (prevents audio overlap)
+    # This handles cases like AskUserQuestion triggering permission hooks
+    # while a skill's TTS is already playing
+    try:
+        from tts_mute import is_voice_active
+        if is_voice_active():
+            log.info("Voice session active, skipping permission TTS (visual prompt still shows)")
+            sys.exit(1)
+    except ImportError:
+        pass  # is_voice_active not available, continue normally
+
     # Check cooldown
     if is_within_cooldown():
         log.info("Within cooldown period, skipping notification")
@@ -292,6 +303,16 @@ def main():
     if should_notify:
         tool_name = extract_tool_name(message)
         log.info(f"Triggering notification for tool: {tool_name}")
+
+        # Set voice_active IMMEDIATELY to prevent concurrent hooks from triggering
+        # This must happen before any TTS calls (there's ~100ms delay to speak_mlx_nonblocking)
+        try:
+            from tts_mute import set_voice_active
+            set_voice_active()
+            log.debug("Voice active flag set")
+        except ImportError:
+            pass
+
         record_notification()
         speak_notification(tool_name)
     else:

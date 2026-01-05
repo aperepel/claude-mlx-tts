@@ -230,6 +230,9 @@ def speak_mlx_http(
 
     Auto-starts server if not running. Retries on transient failures.
 
+    Sets the voice_active flag during playback to prevent other hooks
+    (like permission_request) from triggering concurrent TTS.
+
     Args:
         text: Text to convert to speech.
         voice: Voice name to use. Passed directly to server API.
@@ -246,46 +249,61 @@ def speak_mlx_http(
         log.warning("Empty text, skipping TTS")
         return
 
+    # Set voice active flag to prevent concurrent TTS from other hooks
+    try:
+        from tts_mute import set_voice_active
+        set_voice_active()
+    except ImportError:
+        pass
+
     last_error = None
 
-    for attempt in range(max_retries + 1):
+    try:
+        for attempt in range(max_retries + 1):
+            try:
+                mode = "streaming" if use_streaming else "non-streaming"
+                log.debug(f"TTS request [{mode}] (attempt {attempt + 1}): {text[:50]}...")
+
+                if use_streaming:
+                    # Use true streaming for fast TTFT
+                    metrics = play_streaming_http(
+                        text,
+                        voice=voice,
+                        timeout=timeout,
+                        use_true_streaming=True,
+                    )
+                    log.info(
+                        f"Streaming TTS: ttft={metrics['ttft']:.2f}s "
+                        f"gen={metrics['gen_time']:.2f}s "
+                        f"({metrics['audio_duration']:.1f}s audio)"
+                    )
+                else:
+                    # Legacy non-streaming mode
+                    _speak_mlx_http_legacy(text, voice, timeout)
+
+                # Success - exit the retry loop
+                return
+
+            except requests.exceptions.RequestException as e:
+                last_error = TTSRequestError(f"TTS request failed: {e}")
+                log.warning(f"Request error (attempt {attempt + 1}): {e}")
+            except TTSRequestError as e:
+                last_error = e
+                if attempt < max_retries:
+                    log.warning(f"Retrying after error (attempt {attempt + 1}): {e}")
+                    time.sleep(0.5)  # Brief pause before retry
+                else:
+                    log.warning(f"All retries exhausted: {e}")
+
+        # All retries failed
+        raise last_error or TTSRequestError("TTS request failed after all retries")
+    finally:
+        # Clear voice active flag after TTS completes (or fails)
         try:
-            mode = "streaming" if use_streaming else "non-streaming"
-            log.debug(f"TTS request [{mode}] (attempt {attempt + 1}): {text[:50]}...")
-
-            if use_streaming:
-                # Use true streaming for fast TTFT
-                metrics = play_streaming_http(
-                    text,
-                    voice=voice,
-                    timeout=timeout,
-                    use_true_streaming=True,
-                )
-                log.info(
-                    f"Streaming TTS: ttft={metrics['ttft']:.2f}s "
-                    f"gen={metrics['gen_time']:.2f}s "
-                    f"({metrics['audio_duration']:.1f}s audio)"
-                )
-            else:
-                # Legacy non-streaming mode
-                _speak_mlx_http_legacy(text, voice, timeout)
-
-            # Success - exit the retry loop
-            return
-
-        except requests.exceptions.RequestException as e:
-            last_error = TTSRequestError(f"TTS request failed: {e}")
-            log.warning(f"Request error (attempt {attempt + 1}): {e}")
-        except TTSRequestError as e:
-            last_error = e
-            if attempt < max_retries:
-                log.warning(f"Retrying after error (attempt {attempt + 1}): {e}")
-                time.sleep(0.5)  # Brief pause before retry
-            else:
-                log.warning(f"All retries exhausted: {e}")
-
-    # All retries failed
-    raise last_error or TTSRequestError("TTS request failed after all retries")
+            from tts_mute import clear_voice_active
+            clear_voice_active()
+        except ImportError:
+            pass
 
 
 def _speak_mlx_http_legacy(
@@ -685,6 +703,9 @@ def speak_mlx_nonblocking(message: str, voice: str | None = None) -> None:
     Unlike daemon threads, the subprocess continues running even after the
     parent script exits, ensuring TTS completes successfully.
 
+    Sets the voice_active flag to prevent other hooks (like permission_request)
+    from triggering concurrent TTS. The flag auto-expires after a timeout.
+
     Args:
         message: Text to convert to speech.
         voice: Voice name to use. If None, server uses active voice from config.
@@ -696,6 +717,14 @@ def speak_mlx_nonblocking(message: str, voice: str | None = None) -> None:
     if not message or not message.strip():
         log.warning("Empty message, skipping TTS")
         return
+
+    # Set voice active flag to prevent concurrent TTS from other hooks
+    # Flag auto-expires after timeout (handles crashed processes)
+    try:
+        from tts_mute import set_voice_active
+        set_voice_active()
+    except ImportError:
+        pass  # tts_mute not available, continue without flag
 
     # Spawn a detached subprocess that will continue after parent exits
     cmd = [sys.executable, __file__, "--http", message]
@@ -826,10 +855,18 @@ if __name__ == "__main__":
 
     text = " ".join(args)
 
-    if use_http:
-        # Use HTTP server path (for hooks that spawn this as subprocess)
-        speak_mlx_http(text, voice=voice_name)
-    else:
-        # Use direct MLX path - correctly reads active voice from config
-        from mlx_tts_core import speak_mlx
-        speak_mlx(text, voice_name=voice_name)
+    try:
+        if use_http:
+            # Use HTTP server path (for hooks that spawn this as subprocess)
+            speak_mlx_http(text, voice=voice_name)
+        else:
+            # Use direct MLX path - correctly reads active voice from config
+            from mlx_tts_core import speak_mlx
+            speak_mlx(text, voice_name=voice_name)
+    finally:
+        # Clear voice active flag after TTS completes
+        try:
+            from tts_mute import clear_voice_active
+            clear_voice_active()
+        except ImportError:
+            pass

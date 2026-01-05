@@ -9,6 +9,14 @@ File format:
     - File exists but empty: Muted indefinitely
     - File contains Unix timestamp: Muted until that time
 
+Also manages "voice active" session flag to prevent TTS conflicts:
+    - When a skill/hook initiates TTS, it sets the voice_active flag
+    - Other hooks (like permission_request) check this flag and skip their TTS
+    - This prevents audio overlap when AskUserQuestion triggers permission hooks
+    - Flag auto-expires after a timeout to handle crashed processes
+
+Voice active state is stored at ${PLUGIN_ROOT}/.config/voice_active
+
 Supports natural language duration parsing via Claude CLI (haiku model).
 """
 import os
@@ -25,6 +33,11 @@ from plugin_logging import setup_plugin_logging  # noqa: E402
 _PLUGIN_ROOT = Path(__file__).parent.parent
 _CONFIG_DIR = _PLUGIN_ROOT / ".config"
 MUTE_FILE = _CONFIG_DIR / "mute_until"
+VOICE_ACTIVE_FILE = _CONFIG_DIR / "voice_active"
+
+# Default timeout for voice active flag (seconds)
+# Short timeout since TTS notifications are brief
+VOICE_ACTIVE_TIMEOUT = 10
 
 log = setup_plugin_logging()
 
@@ -254,3 +267,72 @@ def format_remaining_time(seconds: float | None) -> str:
     else:
         days = seconds / 86400
         return f"{days:.1f} days"
+
+
+# =============================================================================
+# Voice Active Session Management
+# =============================================================================
+#
+# Prevents TTS conflicts when multiple hooks fire in sequence.
+# For example, when a skill uses AskUserQuestion, the permission hook fires
+# but should skip its TTS if another TTS is already playing.
+
+
+def is_voice_active() -> bool:
+    """Check if a TTS voice session is currently active.
+
+    Returns:
+        True if voice is active (and not expired), False otherwise.
+    """
+    try:
+        content = VOICE_ACTIVE_FILE.read_text().strip()
+        if not content:
+            return False
+
+        expires_at = float(content)
+        now = time.time()
+
+        if now >= expires_at:
+            # Expired, clean up and return inactive
+            clear_voice_active()
+            return False
+
+        return True
+    except FileNotFoundError:
+        return False
+    except (ValueError, OSError):
+        return False
+
+
+def set_voice_active(timeout: float | None = None) -> None:
+    """Mark TTS voice session as active.
+
+    Call this before starting TTS playback to prevent other hooks
+    from triggering concurrent TTS.
+
+    Args:
+        timeout: Seconds until flag auto-expires. Defaults to VOICE_ACTIVE_TIMEOUT.
+    """
+    if timeout is None:
+        timeout = VOICE_ACTIVE_TIMEOUT
+
+    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    expires_at = time.time() + timeout
+    VOICE_ACTIVE_FILE.write_text(str(expires_at))
+    log.debug(f"Voice active flag set (expires in {timeout}s)")
+
+
+def clear_voice_active() -> None:
+    """Clear the voice active flag.
+
+    Call this after TTS playback completes. Safe to call even if
+    flag doesn't exist.
+    """
+    try:
+        VOICE_ACTIVE_FILE.unlink()
+        log.debug("Voice active flag cleared")
+    except FileNotFoundError:
+        pass  # Already cleared
+    except OSError as e:
+        log.warning(f"Failed to clear voice active flag: {e}")
