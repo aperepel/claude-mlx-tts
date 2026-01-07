@@ -7,6 +7,7 @@ Run with: uv run pytest tests/integration/
 import os
 import sys
 
+import pytest
 
 # Add scripts to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))

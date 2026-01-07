@@ -7,7 +7,6 @@ Run with: uv run pytest tests/integration/
 import os
 import sys
 import time
-from pathlib import Path
 
 import pytest
 
@@ -15,35 +14,24 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 
-def _get_voice_wav_path() -> Path:
-    """Get path to a voice WAV file for testing."""
-    return Path(__file__).parent.parent / "fixtures" / "voices" / "default_voice.wav"
-
-
 class TestVoiceCacheIntegration:
     """Integration tests for voice caching with real MLX model."""
 
-    @pytest.fixture
-    def voice_wav_path(self):
-        """Path to the default voice WAV file."""
-        path = _get_voice_wav_path()
-        assert path.exists(), f"Test fixture missing: {path}"
-        return path
-
-    def test_full_cache_cycle_with_real_model(self, voice_wav_path):
+    def test_full_cache_cycle_with_real_model(self):
         """Test full cache cycle: prepare -> save -> load with real model."""
         from voice_cache import (
             get_or_prepare_conditionals,
             is_cache_valid,
             get_cache_path,
+            _PLUGIN_ROOT,
         )
         from mlx_audio.tts.utils import load_model
 
-        # Use the default voice reference from test fixtures
-        voice_ref = str(voice_wav_path)
+        # Use the default voice reference
+        voice_ref = str(_PLUGIN_ROOT / "assets" / "default_voice.wav")
 
-        # Load model (pass string for HuggingFace ID, not Path - triggers hub resolution)
-        model = load_model("mlx-community/chatterbox-turbo-fp16")  # type: ignore[arg-type]
+        # Load model
+        model = load_model("mlx-community/chatterbox-turbo-fp16")
 
         # Clean any existing cache for this voice
         try:

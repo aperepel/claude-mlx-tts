@@ -11,6 +11,7 @@ import time
 from unittest.mock import patch, MagicMock
 
 import numpy as np
+import pytest
 
 # Add scripts to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
@@ -29,7 +30,7 @@ class TestStreamingPerformanceIntegration:
         # Measure non-streaming TTFT (approximated by full generation time)
         start = time.time()
         generate_speech(test_text, model=model, play=False, stream=False)
-        _non_streaming_time = time.time() - start
+        non_streaming_time = time.time() - start
 
         # Streaming with 0.5s interval should start faster
         # Note: For streaming mode, generate_speech uses model.generate() directly

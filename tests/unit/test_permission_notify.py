@@ -14,16 +14,14 @@ import os
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch, call
 
 import pytest
 
-# Import permission_notify.py module dynamically (it's not a package)
+# Import permission-notify.py module (has dash in filename, can't use normal import)
 HOOKS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "hooks")
-PERMISSION_NOTIFY_PATH = os.path.join(HOOKS_DIR, "permission_notify.py")
+PERMISSION_NOTIFY_PATH = os.path.join(HOOKS_DIR, "permission-notify.py")
 spec = importlib.util.spec_from_file_location("permission_notify", PERMISSION_NOTIFY_PATH)
-assert spec is not None, "Failed to load module spec"
-assert spec.loader is not None, "Module spec has no loader"
 permission_notify = importlib.util.module_from_spec(spec)
 sys.modules['permission_notify'] = permission_notify
 spec.loader.exec_module(permission_notify)
@@ -337,7 +335,7 @@ class TestGetTimeSinceLastUserMessage:
         from permission_notify import get_time_since_last_user_message
 
         # Create empty file
-        with open(temp_transcript, 'w'):
+        with open(temp_transcript, 'w') as f:
             pass
 
         result = get_time_since_last_user_message(temp_transcript)
@@ -478,7 +476,7 @@ class TestCountAutoApprovedToolsSinceLastUser:
         """Should return 0 for empty transcript file."""
         from permission_notify import count_auto_approved_tools_since_last_user
 
-        with open(temp_transcript, 'w'):
+        with open(temp_transcript, 'w') as f:
             pass
 
         result = count_auto_approved_tools_since_last_user(temp_transcript)
@@ -527,7 +525,7 @@ class TestIsWithinCooldown:
 
     def test_recent_notification_returns_true(self, temp_cooldown_file):
         """Should return True when last notification was recent (within 60s)."""
-        from permission_notify import is_within_cooldown
+        from permission_notify import is_within_cooldown, NOTIFY_COOLDOWN_SECS
 
         # Patch the cooldown file path
         with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
@@ -541,7 +539,7 @@ class TestIsWithinCooldown:
 
     def test_old_notification_returns_false(self, temp_cooldown_file):
         """Should return False when last notification was old (> 60s ago)."""
-        from permission_notify import is_within_cooldown
+        from permission_notify import is_within_cooldown, NOTIFY_COOLDOWN_SECS
 
         with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
             # Write timestamp from 120 seconds ago (past cooldown)
@@ -582,7 +580,7 @@ class TestIsWithinCooldown:
         from permission_notify import is_within_cooldown
 
         with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
-            with open(temp_cooldown_file, 'w'):
+            with open(temp_cooldown_file, 'w') as f:
                 pass
 
             result = is_within_cooldown()
@@ -693,7 +691,7 @@ class TestMainIntegration:
 
     def test_notifies_when_user_idle_too_long(self, temp_transcript, temp_cooldown_file):
         """Should notify when user has been idle >= 30 seconds."""
-        from permission_notify import main
+        from permission_notify import main, IDLE_THRESHOLD_SECS
 
         # User message 35s ago (past threshold)
         timestamp = (datetime.now(timezone.utc) - timedelta(seconds=35)).isoformat()
@@ -717,7 +715,7 @@ class TestMainIntegration:
 
     def test_notifies_when_many_tools_auto_approved(self, temp_transcript, temp_cooldown_file):
         """Should notify when >= 3 tools were auto-approved in sequence."""
-        from permission_notify import main
+        from permission_notify import main, MIN_AUTO_APPROVED_TOOLS
 
         # User message 5s ago (recent, normally wouldn't trigger)
         timestamp = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
