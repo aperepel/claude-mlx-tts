@@ -1,6 +1,9 @@
 #!/bin/bash
-# Summarize text and speak it
+# Summarize text and speak it (fire-and-forget)
 # Usage: ./summary-say.sh <long text>
+#
+# This script forks TTS to background and returns immediately.
+# This allows callers to continue working while audio plays.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -21,7 +24,9 @@ if [ -z "$TEXT" ]; then
     exit 1
 fi
 
-exec "$PYTHON" -c "
+# Fork TTS to background and return immediately
+# This makes the script fire-and-forget so callers don't block
+"$PYTHON" -c "
 import sys
 sys.path.insert(0, '$SCRIPT_DIR')
 
@@ -91,4 +96,9 @@ summary = summarize(text)
 print(f'Summary: {summary}')
 message = f'{ATTENTION_PREFIX} ... {summary}'
 speak(message)
-"
+" >/dev/null 2>&1 &
+
+# Disown the background process so it's not tied to this shell
+disown 2>/dev/null
+
+echo "TTS summarizing started"

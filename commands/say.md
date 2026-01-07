@@ -2,10 +2,10 @@
 description: Speak text directly using TTS (smoke test)
 ---
 
-Run this command in the **background** so you can continue working while audio plays:
+Speak text using TTS. This command is **fire-and-forget** - it returns immediately while audio plays in the background.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/say.sh $ARGUMENTS
 ```
 
-**Important**: Use `run_in_background: true` when calling the Bash tool.
+You can call this and immediately proceed to show questions or other UI - the TTS audio will play asynchronously.

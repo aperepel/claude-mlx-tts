@@ -243,6 +243,14 @@ def main():
         log.info("Skipping TTS for AskUserQuestion tool")
         sys.exit(1)
 
+    # Skip TTS for TTS-related commands (they'll be auto-approved by approve-tts.py)
+    tool_input = hook_input.get("tool_input", {})
+    command = tool_input.get("command", "")
+    TTS_SCRIPTS = ["tts-init.sh", "tts-start.sh", "tts-stop.sh", "tts-status.sh", "tts-mute.sh", "run-tts.sh", "say.sh", "summary-say.sh"]
+    if tool_name == "Bash" and any(script in command for script in TTS_SCRIPTS):
+        log.info(f"Skipping TTS notification for auto-approved command: {command[:50]}")
+        sys.exit(1)
+
     transcript_path = hook_input.get("transcript_path", "")
 
     if not transcript_path:
