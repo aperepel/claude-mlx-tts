@@ -36,6 +36,28 @@ claude --plugin-dir "$(pwd)"
 
 No build step needed.
 
+## Debugging
+
+### Log Files
+
+All plugin logs are consolidated in `logs/plugin.log`:
+
+```bash
+# Watch logs in real-time
+tail -f logs/plugin.log
+
+# MLX server has its own log
+tail -f logs/mlx-server.log
+```
+
+### Enable Debug Logging
+
+Set `TTS_LOG_LEVEL=DEBUG` for verbose output:
+
+```bash
+TTS_LOG_LEVEL=DEBUG claude --plugin-dir "$(pwd)"
+```
+
 ## Cleanup
 
 To switch back to the marketplace version:

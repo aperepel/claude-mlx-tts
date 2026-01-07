@@ -22,10 +22,19 @@ Architecture:
     Metrics logged per request:
         TTS: ttft=0.26s gen=2.45s chunks=7 RTF=0.58
 """
-# Suppress startup warnings BEFORE any imports that trigger them
+import argparse
+import logging
 import os
+import struct
+import sys
+import time
 import warnings
+from pathlib import Path
+from typing import AsyncGenerator
 
+import numpy as np
+
+# Suppress startup warnings BEFORE any imports that trigger them
 # Suppress transformers "no PyTorch/TensorFlow" advisory (we use MLX)
 os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
 
@@ -36,17 +45,6 @@ warnings.filterwarnings(
     category=UserWarning,
     module="webrtcvad"
 )
-
-import argparse
-import io
-import logging
-import struct
-import sys
-import time
-from pathlib import Path
-from typing import AsyncGenerator
-
-import numpy as np
 
 # Setup logging early
 logging.basicConfig(
@@ -150,7 +148,6 @@ def register_streaming_endpoint(app, model_provider, model_name: str):
     This endpoint yields audio chunks as they're generated, enabling
     playback to start before generation completes (fast TTFT).
     """
-    from fastapi import HTTPException
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
 
@@ -369,7 +366,7 @@ def main():
     # Determine voice name
     voice_name = args.voice or get_default_voice_name()
 
-    log.info(f"Starting TTS server with voice caching...")
+    log.info("Starting TTS server with voice caching...")
     log.info(f"Model: {args.model}")
     log.info(f"Voice: {voice_name}")
 

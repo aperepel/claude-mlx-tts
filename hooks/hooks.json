@@ -51,8 +51,8 @@
       "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-stop.sh"
     },
     "tts-status": {
-      "description": "Check TTS server status (running/stopped, port, model)",
-      "instruction": "Check if TTS server is running",
+      "description": "Check if the MLX TTS server is running",
+      "instruction": "Run the command to display comprehensive TTS configuration status including active voice, available voices, hook overrides, server status, and audio processing settings. The output includes a TUI command the user can copy-paste to open the configuration UI.",
       "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-status.sh"
     },
     "say": {
@@ -65,10 +65,10 @@
       "instruction": "Summarize the provided text and speak it",
       "command": "${CLAUDE_PLUGIN_ROOT}/scripts/summary-say.sh"
     },
-    "tts-config": {
-      "description": "Configure TTS settings (playback speed)",
-      "instruction": "Run the wizard command to see current settings and available options, then use AskUserQuestion to let the user select a playback speed (1.0x Slow, 1.3x Normal, 1.6x Fast, 2.0x Turbo). After selection, run set command with the chosen speed.",
-      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-config.sh"
+    "tts-mute": {
+      "description": "Temporarily mute TTS notifications",
+      "instruction": "Mute TTS notifications for a specified duration. Pass the duration as an argument (e.g., 'for 30 minutes', 'until 3pm', 'for an hour'). To unmute, use 'resume', 'off', 'unmute', or 'cancel'. With no argument, mutes indefinitely.",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tts-mute.sh"
     }
   }
 }

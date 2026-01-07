@@ -8,8 +8,7 @@ Run with: uv run pytest tests/unit/test_streaming_http_client.py -v
 """
 import os
 import sys
-from unittest.mock import MagicMock, patch, PropertyMock
-from io import BytesIO
+from unittest.mock import MagicMock, patch
 import struct
 
 import numpy as np
@@ -75,7 +74,6 @@ class TestStreamResponseYieldsChunks:
     def test_yields_audio_chunks_from_response(self):
         """Should yield audio chunks as they arrive from HTTP response."""
         from mlx_server_utils import stream_tts_http
-        from streaming_wav_parser import WavHeader
 
         # Create mock response with chunked data
         audio = np.sin(np.linspace(0, 2 * np.pi, 2400)).astype(np.float32)
@@ -95,6 +93,7 @@ class TestStreamResponseYieldsChunks:
         # Should yield tuples of (header, audio_chunk)
         assert len(collected) > 0
         first_header, _ = collected[0]
+        assert first_header is not None
         assert first_header.sample_rate == 24000
 
     def test_yields_header_with_first_chunk(self):
@@ -113,6 +112,7 @@ class TestStreamResponseYieldsChunks:
                 results = list(stream_tts_http("Test"))
 
         header, _ = results[0]
+        assert header is not None
         assert header.sample_rate == 44100
         assert header.channels == 2
 

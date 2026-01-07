@@ -12,7 +12,7 @@ tool_input = hook_input.get("tool_input", {})
 command = tool_input.get("command", "")
 
 # Auto-approve TTS-related commands
-TTS_SCRIPTS = ["tts-init.sh", "tts-start.sh", "tts-stop.sh", "tts-status.sh", "tts-config.sh", "run-tts.sh", "say.sh", "summary-say.sh"]
+TTS_SCRIPTS = ["tts-init.sh", "tts-start.sh", "tts-stop.sh", "tts-status.sh", "tts-mute.sh", "run-tts.sh", "say.sh", "summary-say.sh"]
 if any(script in command for script in TTS_SCRIPTS):
     output = {
         "hookSpecificOutput": {

@@ -10,9 +10,12 @@ Screens:
 
 Run with: uv run python scripts/tts_tui.py
 """
+import os
+from pathlib import Path
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
+from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import Screen, ModalScreen
 from textual.widgets import (
@@ -34,9 +37,33 @@ from textual.message import Message
 from textual.worker import Worker
 from textual import work
 from textual_autocomplete import PathAutoComplete, DropdownItem, TargetState
-from pathlib import Path
-import os
-import re
+
+import tts_config
+from tts_config import (
+    HOOK_TYPES,
+    VOICE_NAME_PATTERN,
+    copy_voice,
+    delete_voice,
+    discover_voices,
+    get_active_voice,
+    get_compressor_config,
+    get_default_hook_prompt,
+    get_hook_prompt,
+    get_hook_voice,
+    get_limiter_config,
+    get_streaming_interval,
+    get_voice_format,
+    get_voice_usage,
+    has_voice_defaults,
+    rename_voice,
+    reset_all_audio_to_defaults,
+    set_active_voice,
+    set_compressor_setting,
+    set_hook_prompt,
+    set_hook_voice,
+    set_limiter_setting,
+    set_streaming_interval,
+)
 
 
 class WavPathAutoComplete(PathAutoComplete):
@@ -153,40 +180,6 @@ class WavPathAutoComplete(PathAutoComplete):
             self.clear_directory_cache()
         super()._handle_focus_change(has_focus=has_focus)
 
-
-import tts_config
-from tts_config import (
-    DEFAULT_COMPRESSOR,
-    DEFAULT_LIMITER,
-    HOOK_DEFAULT_PROMPTS,
-    HOOK_TYPES,
-    VOICE_NAME_PATTERN,
-    copy_voice,
-    delete_voice,
-    discover_voices,
-    get_active_voice,
-    get_compressor_config,
-    get_default_hook_prompt,
-    get_effective_compressor,
-    get_effective_hook_prompt,
-    get_effective_limiter,
-    get_hook_prompt,
-    get_hook_voice,
-    get_limiter_config,
-    get_streaming_interval,
-    get_voice_format,
-    get_voice_usage,
-    has_voice_defaults,
-    rename_voice,
-    reset_all_audio_to_defaults,
-    set_active_voice,
-    set_compressor_setting,
-    set_hook_prompt,
-    set_hook_voice,
-    set_limiter_setting,
-    set_streaming_interval,
-    set_voice_config,
-)
 
 # Compressor presets with tuned values
 COMPRESSOR_PRESETS = {
@@ -373,7 +366,7 @@ class DeleteVoiceModal(ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static(f"Delete Voice", classes="modal-title")
+            yield Static("Delete Voice", classes="modal-title")
             yield Static(f'Delete "{self.voice_name}"?')
 
             # Only warn about hook usage (active voice warning is pointless)
@@ -466,7 +459,7 @@ class InputModal(ModalScreen):
     def compose(self) -> ComposeResult:
         action_label = "Copy" if self.action_type == "copy" else "Rename"
         with Vertical():
-            yield Static(self.title, classes="modal-title")
+            yield Static(self.title or "", classes="modal-title")
             yield Static(f'{action_label} "{self.voice_name}" as:')
             with Horizontal(classes="input-row"):
                 yield Input(
@@ -917,11 +910,12 @@ class CompressorWidget(Container):
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle preset selection."""
         if event.select.id == "preset-select" and event.value != "custom":
-            preset = COMPRESSOR_PRESETS.get(event.value)
-            if preset:
-                self._apply_preset(preset)
-                if self._initialized:
-                    self.notify("Voice settings saved", severity="information")
+            if isinstance(event.value, str):
+                preset = COMPRESSOR_PRESETS.get(event.value)
+                if preset:
+                    self._apply_preset(preset)
+                    if self._initialized:
+                        self.notify("Voice settings saved", severity="information")
 
     def _apply_preset(self, preset: dict) -> None:
         """Apply a compressor preset."""
@@ -1050,11 +1044,12 @@ class LimiterWidget(Container):
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle preset selection."""
         if event.select.id == "limiter-preset-select" and event.value != "custom":
-            preset = LIMITER_PRESETS.get(event.value)
-            if preset:
-                self._apply_preset(preset)
-                if self._initialized:
-                    self.notify("Voice settings saved", severity="information")
+            if isinstance(event.value, str):
+                preset = LIMITER_PRESETS.get(event.value)
+                if preset:
+                    self._apply_preset(preset)
+                    if self._initialized:
+                        self.notify("Voice settings saved", severity="information")
 
     def _apply_preset(self, preset: dict) -> None:
         """Apply a limiter preset."""
@@ -1340,8 +1335,8 @@ class HookSettingsWidget(Container):
         if event.state == WorkerState.SUCCESS:
             result = event.worker.result
             self.is_playing = False
-            if not result.get("success"):
-                error = result.get("error") or result.get("stderr", "")[:100]
+            if result is None or not result.get("success"):
+                error = result.get("error") or result.get("stderr", "")[:100] if result else "Unknown error"
                 self.notify(f"TTS failed: {error}", severity="error")
         elif event.state in (WorkerState.ERROR, WorkerState.CANCELLED):
             self.is_playing = False
@@ -1466,9 +1461,9 @@ class PreviewWidget(Container):
 
             # Show appropriate message
             if had_captured:
-                self.notify(f"Reset to captured defaults", severity="information")
+                self.notify("Reset to captured defaults", severity="information")
             else:
-                self.notify(f"Reset to factory defaults", severity="information")
+                self.notify("Reset to factory defaults", severity="information")
 
     def _play_preview(self) -> None:
         """Play the preview phrase using TTS."""
@@ -1517,10 +1512,10 @@ class PreviewWidget(Container):
         if event.state == WorkerState.SUCCESS:
             result = event.worker.result
             self.is_playing = False
-            if result.get("success"):
+            if result is not None and result.get("success"):
                 self.status_message = ""
             else:
-                error = result.get("error") or result.get("stderr", "")[:100]
+                error = result.get("error") or result.get("stderr", "")[:100] if result else "Unknown error"
                 self.status_message = "Error"
                 self.notify(f"TTS failed: {error}", severity="error")
         elif event.state in (WorkerState.ERROR, WorkerState.CANCELLED):
@@ -1540,10 +1535,6 @@ class PreviewWidget(Container):
         if self.is_mounted:
             display = self.query_one("#phrase-display", Static)
             display.update(f'"{phrase}"')
-
-
-# Voice name validation pattern
-VOICE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 class CloneLabWidget(Container):
@@ -1802,8 +1793,8 @@ class CloneLabWidget(Container):
         self.is_cloning = True
         self.query_one("#clone-btn", Button).display = False
         self.query_one("#clone-loading").display = True
-        self.query_one("#status-msg").update("Cloning voice... (loading model)")
-        self.query_one("#status-msg").display = True
+        self.query_one("#status-msg", Static).update("Cloning voice... (loading model)")
+        self.query_one("#status-msg", Static).display = True
 
         self._run_clone_worker(wav_path, voice_name)
 
@@ -1857,7 +1848,9 @@ class CloneLabWidget(Container):
             self.is_cloning = False
             self.query_one("#clone-loading").display = False
 
-            if result.get("success"):
+            if result is None:
+                self._show_failure("Unknown error")
+            elif result.get("success"):
                 voice_name = result.get("voice_name", "")
                 output = result.get("output", "")
 
@@ -2052,10 +2045,11 @@ class SystemScreen(Screen):
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle setting changes."""
         if event.select.id == "interval-select" and event.value is not None:
-            try:
-                set_streaming_interval(event.value)
-            except ValueError as e:
-                self.notify(str(e), severity="error")
+            if isinstance(event.value, (int, float)):
+                try:
+                    set_streaming_interval(float(event.value))
+                except ValueError as e:
+                    self.notify(str(e), severity="error")
 
 
 class AboutScreen(Screen):
@@ -2210,10 +2204,11 @@ class MainScreen(Screen):
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle setting changes."""
         if event.select.id == "interval-select" and event.value is not None:
-            try:
-                set_streaming_interval(event.value)
-            except ValueError as e:
-                self.notify(str(e), severity="error")
+            if isinstance(event.value, (int, float)):
+                try:
+                    set_streaming_interval(float(event.value))
+                except ValueError as e:
+                    self.notify(str(e), severity="error")
 
     def on_preview_widget_audio_reset(self, event: PreviewWidget.AudioReset) -> None:
         """Handle audio reset - refresh compressor and limiter widgets."""

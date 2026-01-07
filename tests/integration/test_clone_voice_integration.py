@@ -15,15 +15,20 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 
+def _get_voice_wav_path() -> Path:
+    """Get path to a voice WAV file for testing."""
+    return Path(__file__).parent.parent / "fixtures" / "voices" / "default_voice.wav"
+
+
 class TestCloneVoiceIntegration:
     """Integration tests for clone_voice with real MLX model."""
 
     @pytest.fixture
     def default_voice_path(self):
         """Path to the default voice WAV file."""
-        scripts_dir = Path(__file__).parent.parent.parent / "scripts"
-        plugin_root = scripts_dir.parent
-        return plugin_root / "assets" / "default_voice.wav"
+        path = _get_voice_wav_path()
+        assert path.exists(), f"Test fixture missing: {path}"
+        return path
 
     def test_extract_conditionals_with_real_model(self, default_voice_path):
         """Test extracting conditionals from real WAV with real model."""
@@ -33,14 +38,14 @@ class TestCloneVoiceIntegration:
         # Validate input
         input_path = validate_input_file(str(default_voice_path))
 
-        # Load model
-        model = load_model("mlx-community/chatterbox-turbo-fp16")
+        # Load model (string is resolved by HuggingFace Hub)
+        model = load_model("mlx-community/chatterbox-turbo-fp16")  # type: ignore[arg-type]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_voice.safetensors"
 
-            # Extract and save
-            result, input_size, output_size = extract_and_save_conditionals(
+            # Extract and save (tuple returned when return_sizes=True)
+            result, input_size, output_size = extract_and_save_conditionals(  # type: ignore[misc]
                 model, input_path, output_path, return_sizes=True
             )
 
@@ -61,15 +66,16 @@ class TestCloneVoiceIntegration:
         from mlx_audio.tts.utils import load_model
 
         input_path = validate_input_file(str(default_voice_path))
-        model = load_model("mlx-community/chatterbox-turbo-fp16")
+        model = load_model("mlx-community/chatterbox-turbo-fp16")  # type: ignore[arg-type]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_voice.safetensors"
 
             extract_and_save_conditionals(model, input_path, output_path)
 
-            # Load and verify structure
+            # Load and verify structure (safetensors returns dict)
             loaded = mx.load(str(output_path))
+            assert isinstance(loaded, dict)
 
             # Check required keys
             assert "t3_speaker_emb" in loaded
@@ -106,12 +112,13 @@ class TestCloneVoiceIntegration:
         from mlx_audio.tts.utils import load_model
 
         input_path = validate_input_file(str(default_voice_path))
-        model = load_model("mlx-community/chatterbox-turbo-fp16")
+        model = load_model("mlx-community/chatterbox-turbo-fp16")  # type: ignore[arg-type]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_voice.safetensors"
 
-            _, input_size, output_size = extract_and_save_conditionals(
+            # Tuple returned when return_sizes=True
+            _, input_size, output_size = extract_and_save_conditionals(  # type: ignore[misc]
                 model, input_path, output_path, return_sizes=True
             )
 

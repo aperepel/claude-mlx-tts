@@ -6,4 +6,7 @@ logs/
 .config/
 *.wav
 !assets/*.wav
+!tests/fixtures/
 .DS_Store
+typings/
+.beads/last-touched
