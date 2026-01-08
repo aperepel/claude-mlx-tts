@@ -999,3 +999,45 @@ class TestIsInInterviewSession:
         # Note: This test may need adjustment based on desired behavior
         # For now, testing lowercase only is acceptable
         assert result is True
+
+    def test_detects_slash_command_in_xml_tags(self, temp_transcript):
+        """Should detect interview/blitz in Claude Code's XML command format.
+
+        Real-world slash commands are wrapped in XML tags like:
+        <command-message>claude-spec-builder:blitz</command-message>
+        <command-name>/claude-spec-builder:blitz</command-name>
+        <command-args>kg-a9u.1.4</command-args>
+
+        The slash command is NOT at the start of the string.
+        """
+        from permission_notify import is_in_interview_session
+
+        # This is the actual format from a real Claude Code transcript
+        xml_wrapped_command = (
+            "<command-message>claude-spec-builder:blitz</command-message>\n"
+            "<command-name>/claude-spec-builder:blitz</command-name>\n"
+            "<command-args>kg-a9u.1.4</command-args>"
+        )
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message(xml_wrapped_command)) + '\n')
+            f.write(json.dumps(create_assistant_text_message("Running blitz...")) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is True
+
+    def test_detects_slash_command_in_xml_interview(self, temp_transcript):
+        """Should detect /interview in XML-wrapped format."""
+        from permission_notify import is_in_interview_session
+
+        xml_wrapped_command = (
+            "<command-message>interview</command-message>\n"
+            "<command-name>/interview</command-name>\n"
+            "<command-args>--voice</command-args>"
+        )
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message(xml_wrapped_command)) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is True

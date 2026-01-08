@@ -154,8 +154,10 @@ def is_in_interview_session(transcript_path: str) -> bool:
     interview_skills = {"interview", "blitz", "claude-spec-builder:interview", "claude-spec-builder:blitz"}
 
     # Slash command patterns to detect in user messages (case-insensitive)
+    # Note: Slash commands may appear anywhere in content, not just at start
+    # (e.g., inside <command-name>/blitz</command-name> XML tags)
     slash_command_pattern = re.compile(
-        r'^/(interview|blitz|claude-spec-builder:interview|claude-spec-builder:blitz)\b',
+        r'/(interview|blitz|claude-spec-builder:interview|claude-spec-builder:blitz)\b',
         re.IGNORECASE
     )
 
@@ -173,7 +175,7 @@ def is_in_interview_session(transcript_path: str) -> bool:
 
             # Handle string content (direct user message)
             if isinstance(content, str):
-                if slash_command_pattern.match(content.strip()):
+                if slash_command_pattern.search(content):
                     user_slash_commands.append(content.strip()[:50])
                     log.info(f"Detected interview session: user slash command '{content.strip()[:50]}'")
                     return True
@@ -183,7 +185,7 @@ def is_in_interview_session(transcript_path: str) -> bool:
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "text":
                         text = block.get("text", "")
-                        if slash_command_pattern.match(text.strip()):
+                        if slash_command_pattern.search(text):
                             user_slash_commands.append(text.strip()[:50])
                             log.info(f"Detected interview session: user slash command '{text.strip()[:50]}'")
                             return True
