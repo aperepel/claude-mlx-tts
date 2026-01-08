@@ -7,7 +7,6 @@ import io
 import os
 import sys
 import time
-import socket
 import struct
 from unittest.mock import patch, MagicMock
 
