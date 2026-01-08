@@ -1,9 +1,8 @@
 ---
-description: Stop the MLX TTS server
+allowed-tools: Bash(*)
+description: Stop the TTS server to reclaim GPU memory
 ---
 
 Run this command to stop the TTS server:
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/tts-stop.sh
-```
+!`${CLAUDE_PLUGIN_ROOT}/scripts/tts-stop.sh`

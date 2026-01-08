@@ -1,11 +1,8 @@
 ---
-description: Speak text directly using TTS (smoke test)
+allowed-tools: Bash(*)
+description: Speak text directly using TTS
 ---
 
-Speak text using TTS. This command is **fire-and-forget** - it returns immediately while audio plays in the background.
+Run this command to speak the provided text:
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/say.sh $ARGUMENTS
-```
-
-You can call this and immediately proceed to show questions or other UI - the TTS audio will play asynchronously.
+!`${CLAUDE_PLUGIN_ROOT}/scripts/say.sh $ARGUMENTS`

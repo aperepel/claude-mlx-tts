@@ -1,7 +1,8 @@
 {
   "name": "claude-mlx-tts",
   "description": "Voice-cloned TTS notifications using MLX Chatterbox Turbo. Clone any voice from a 20-second sample.",
-  "version": "1.3.0",
+  "version": "1.4.0",
+  "minClaudeVersion": "2.1.0",
   "author": {
     "name": "aperepel"
   },

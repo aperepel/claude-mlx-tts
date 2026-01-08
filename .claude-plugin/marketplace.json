@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Voice-cloned TTS summaries for Claude Code deep work sessions",
-    "version": "1.3.0"
+    "version": "1.4.0"
   },
   "plugins": [
     {
       "name": "claude-mlx-tts",
       "source": "./",
       "description": "Speaks a voice-cloned summary when Claude finishes deep work. Works out of the box with bundled voice, or clone your own. Triggers on long responses, multiple tool calls, or thinking mode.",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "author": {
         "name": "aperepel"
       },

@@ -1,11 +1,9 @@
 ---
-description: Summarize long text and speak the summary
+allowed-tools: Bash(*)
+description: Summarize and speak the last response
+context: fork
 ---
 
-Summarize long text and speak a condensed version. This command is **fire-and-forget** - it returns immediately while summarization and audio happen in the background.
+Look at the last assistant response in the conversation, create a one-sentence summary (max 15 words), then speak it:
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/summary-say.sh $ARGUMENTS
-```
-
-You can call this and immediately proceed to show questions or other UI - the summarization and TTS audio will happen asynchronously.
+!`${CLAUDE_PLUGIN_ROOT}/scripts/say.sh "Attention on deck... [your summary]"`
