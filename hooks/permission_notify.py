@@ -445,13 +445,11 @@ def main():
         question_text = extract_question_text(tool_input)
 
         if in_interview and question_text:
-            # Interview questions are anchor points - always voice if user may be idle
-            if should_notify:
-                log.info(f"Interview question (idle detected): {question_text[:50]}...")
-                record_notification()
-                speak_interview_question(question_text)
-            else:
-                log.info("Interview question but user seems active, skipping TTS")
+            # Interview questions are ALWAYS voiced immediately - no cooldown/activity check
+            # This ensures users hear questions even when actively participating
+            log.info(f"Interview question (always voiced): {question_text[:50]}...")
+            record_notification()
+            speak_interview_question(question_text)
         else:
             # Non-interview AskUserQuestion - skip TTS (it's an interactive prompt)
             log.info("AskUserQuestion outside interview context, skipping TTS")

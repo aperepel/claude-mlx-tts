@@ -1041,3 +1041,183 @@ class TestIsInInterviewSession:
 
         result = is_in_interview_session(temp_transcript)
         assert result is True
+
+
+# =============================================================================
+# TEST: Interview Questions Always Voiced (No Cooldown)
+# =============================================================================
+
+class TestInterviewQuestionsAlwaysVoiced:
+    """Tests verifying interview/blitz questions are ALWAYS voiced immediately.
+
+    Interview questions should bypass the normal "user seems active" check.
+    This is because interview questions are critical anchors that the user
+    needs to hear, regardless of recent activity.
+    """
+
+    def test_interview_question_voiced_even_when_user_recently_active(self, temp_transcript, temp_cooldown_file):
+        """CRITICAL: Interview questions should ALWAYS be voiced, even when user is active.
+
+        This is the core fix: the current code skips TTS when user seems active,
+        but interview questions should never be skipped regardless of activity.
+        """
+        from permission_notify import main
+
+        # User message only 5 seconds ago (normally "user seems active" = skip TTS)
+        timestamp = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+
+        # Setup: blitz session with recent user activity
+        with open(temp_transcript, 'w') as f:
+            # User started a blitz
+            f.write(json.dumps(create_user_message("/blitz bd-123", timestamp)) + '\n')
+            # Only 2 tools called (under threshold)
+            f.write(json.dumps(create_assistant_message_with_tools(["Read", "Grep"])) + '\n')
+
+        # Hook input: AskUserQuestion with interview question
+        hook_input = {
+            "transcript_path": temp_transcript,
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+                "questions": [
+                    {
+                        "question": "What authentication method should we use?",
+                        "header": "Auth",
+                        "options": [
+                            {"label": "OAuth2", "description": "Use OAuth2"},
+                            {"label": "JWT", "description": "Use JWT tokens"}
+                        ]
+                    }
+                ]
+            }
+        }
+
+        with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
+            with patch('permission_notify.get_hook_input', return_value=hook_input):
+                with patch('permission_notify.speak_interview_question') as mock_speak:
+                    with pytest.raises(SystemExit):
+                        main()
+
+                    # CRITICAL: Interview question MUST be voiced even though user is active
+                    mock_speak.assert_called_once()
+                    # Verify the question text was passed
+                    call_args = mock_speak.call_args[0][0]
+                    assert "authentication" in call_args.lower()
+
+    def test_interview_question_voiced_with_zero_idle_time(self, temp_transcript, temp_cooldown_file):
+        """Interview questions should be voiced even with 0 seconds idle time."""
+        from permission_notify import main
+
+        # User message just now (0 seconds ago)
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("/interview", timestamp)) + '\n')
+
+        hook_input = {
+            "transcript_path": temp_transcript,
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+                "questions": [
+                    {
+                        "question": "What is the main goal of this feature?",
+                        "header": "Goal",
+                        "options": [
+                            {"label": "Performance", "description": "Improve speed"},
+                            {"label": "UX", "description": "Better user experience"}
+                        ]
+                    }
+                ]
+            }
+        }
+
+        with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
+            with patch('permission_notify.get_hook_input', return_value=hook_input):
+                with patch('permission_notify.speak_interview_question') as mock_speak:
+                    with pytest.raises(SystemExit):
+                        main()
+
+                    # Must be voiced even with 0 idle time
+                    mock_speak.assert_called_once()
+
+    def test_interview_question_ignores_tool_count_threshold(self, temp_transcript, temp_cooldown_file):
+        """Interview questions should be voiced regardless of tool count.
+
+        Normal notifications require >= 3 tools, but interview questions
+        should voice even with 0 or 1 tools.
+        """
+        from permission_notify import main
+
+        # Recent user message
+        timestamp = (datetime.now(timezone.utc) - timedelta(seconds=3)).isoformat()
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("/blitz bd-456", timestamp)) + '\n')
+            # Only 1 tool (below threshold of 3)
+            f.write(json.dumps(create_assistant_message_with_tools(["Read"])) + '\n')
+
+        hook_input = {
+            "transcript_path": temp_transcript,
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+                "questions": [
+                    {
+                        "question": "Which database should we use?",
+                        "header": "DB",
+                        "options": [
+                            {"label": "PostgreSQL", "description": "Relational"},
+                            {"label": "MongoDB", "description": "Document store"}
+                        ]
+                    }
+                ]
+            }
+        }
+
+        with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
+            with patch('permission_notify.get_hook_input', return_value=hook_input):
+                with patch('permission_notify.speak_interview_question') as mock_speak:
+                    with pytest.raises(SystemExit):
+                        main()
+
+                    # Must be voiced regardless of tool count
+                    mock_speak.assert_called_once()
+
+    def test_non_interview_ask_user_question_still_skipped(self, temp_transcript, temp_cooldown_file):
+        """Non-interview AskUserQuestion should NOT be voiced (existing behavior).
+
+        This ensures we only changed interview behavior, not general AskUserQuestion.
+        """
+        from permission_notify import main
+
+        # Recent user message, normal context (not interview)
+        timestamp = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+
+        with open(temp_transcript, 'w') as f:
+            # Normal task, not interview
+            f.write(json.dumps(create_user_message("Fix the bug in auth", timestamp)) + '\n')
+            f.write(json.dumps(create_assistant_message_with_tools(["Read"])) + '\n')
+
+        hook_input = {
+            "transcript_path": temp_transcript,
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+                "questions": [
+                    {
+                        "question": "Should I refactor this function?",
+                        "header": "Refactor",
+                        "options": [
+                            {"label": "Yes", "description": "Refactor now"},
+                            {"label": "No", "description": "Keep as is"}
+                        ]
+                    }
+                ]
+            }
+        }
+
+        with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
+            with patch('permission_notify.get_hook_input', return_value=hook_input):
+                with patch('permission_notify.speak_interview_question') as mock_speak:
+                    with pytest.raises(SystemExit):
+                        main()
+
+                    # Should NOT be voiced (not in interview session)
+                    mock_speak.assert_not_called()
