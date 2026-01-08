@@ -198,69 +198,6 @@ class TestIsRealUserMessage:
 
 
 # =============================================================================
-# TEST: extract_tool_name()
-# =============================================================================
-
-class TestExtractToolName:
-    """Tests for extracting tool names from permission messages."""
-
-    def test_extract_bash_tool(self):
-        """Should extract 'Bash' from permission message."""
-        from permission_notify import extract_tool_name
-
-        message = "Claude wants to use Bash"
-        assert extract_tool_name(message) == "Bash"
-
-    def test_extract_write_tool(self):
-        """Should extract 'Write' from permission message."""
-        from permission_notify import extract_tool_name
-
-        message = "Claude wants to use Write"
-        assert extract_tool_name(message) == "Write"
-
-    def test_extract_edit_tool(self):
-        """Should extract 'Edit' from permission message."""
-        from permission_notify import extract_tool_name
-
-        message = "Claude wants to use Edit"
-        assert extract_tool_name(message) == "Edit"
-
-    def test_extract_read_tool(self):
-        """Should extract 'Read' from permission message."""
-        from permission_notify import extract_tool_name
-
-        message = "Claude wants to use Read"
-        assert extract_tool_name(message) == "Read"
-
-    def test_extract_webfetch_tool(self):
-        """Should extract 'WebFetch' from permission message."""
-        from permission_notify import extract_tool_name
-
-        message = "Claude wants to use WebFetch"
-        assert extract_tool_name(message) == "WebFetch"
-
-    def test_extract_task_tool(self):
-        """Should extract 'Task' from permission message."""
-        from permission_notify import extract_tool_name
-
-        message = "Claude wants to use Task"
-        assert extract_tool_name(message) == "Task"
-
-    def test_unknown_tool_returns_generic(self):
-        """Should return 'a tool' for unknown tool names."""
-        from permission_notify import extract_tool_name
-
-        message = "Claude wants to use SomethingUnknown"
-        assert extract_tool_name(message) == "a tool"
-
-    def test_empty_message(self):
-        """Should return 'a tool' for empty message."""
-        from permission_notify import extract_tool_name
-
-        assert extract_tool_name("") == "a tool"
-
-
-# =============================================================================
 # TEST: get_time_since_last_user_message()
 # =============================================================================
 

@@ -9,7 +9,9 @@ authors = [{ name = "aperepel" }]
 keywords = ["tts", "voice-cloning", "mlx", "chatterbox", "claude", "apple-silicon"]
 
 # No core dependencies - default uses macOS 'say' command
-dependencies = []
+dependencies = [
+    "pyright>=1.1.408",
+]
 
 [project.optional-dependencies]
 # MLX voice cloning on Apple Silicon (for local dev/testing)
