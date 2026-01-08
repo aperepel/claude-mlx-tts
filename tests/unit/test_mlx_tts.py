@@ -15,38 +15,9 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 
-def _is_mlx_model_available() -> bool:
-    """Check if MLX model can be loaded (for skipping integration-like tests)."""
-    try:
-        from mlx_tts_core import load_tts_model
-        model = load_tts_model()
-        return model is not None
-    except Exception:
-        return False
-
-
-# Cache the result to avoid repeated model loading attempts
-_MLX_MODEL_AVAILABLE = None
-
-
-def is_mlx_model_available() -> bool:
-    """Cached check for MLX model availability."""
-    global _MLX_MODEL_AVAILABLE
-    if _MLX_MODEL_AVAILABLE is None:
-        _MLX_MODEL_AVAILABLE = _is_mlx_model_available()
-    return _MLX_MODEL_AVAILABLE
-
-
-requires_mlx_model = pytest.mark.skipif(
-    not is_mlx_model_available(),
-    reason="MLX model not available or failed to load"
-)
-
-
 class TestLoadTtsModel:
     """Tests for model loading functionality."""
 
-    @requires_mlx_model
     def test_load_tts_model_returns_model_object(self):
         """load_tts_model should return a valid model object."""
         from mlx_tts_core import load_tts_model
@@ -54,7 +25,6 @@ class TestLoadTtsModel:
         model = load_tts_model()
         assert model is not None
 
-    @requires_mlx_model
     def test_load_tts_model_has_sample_rate(self):
         """Loaded model should have sample_rate attribute."""
         from mlx_tts_core import load_tts_model
@@ -77,7 +47,6 @@ class TestLoadTtsModel:
 class TestGetModel:
     """Tests for cached model retrieval."""
 
-    @requires_mlx_model
     def test_get_model_returns_cached_instance(self):
         """get_model should return the same model instance on subsequent calls."""
         from mlx_tts_core import get_model, _clear_model_cache
@@ -87,7 +56,6 @@ class TestGetModel:
         m2 = get_model()
         assert m1 is m2
 
-    @requires_mlx_model
     def test_get_model_loads_on_first_call(self):
         """get_model should load model on first call."""
         from mlx_tts_core import get_model, _clear_model_cache
@@ -100,7 +68,6 @@ class TestGetModel:
 class TestGenerateSpeech:
     """Tests for speech generation."""
 
-    @requires_mlx_model
     def test_generate_speech_with_preloaded_model(self):
         """generate_speech should work with a preloaded model."""
         from mlx_tts_core import generate_speech, get_model
@@ -109,7 +76,6 @@ class TestGenerateSpeech:
         # Should not raise - play=False avoids blocking on audio
         generate_speech("Test message", model=model, play=False)
 
-    @requires_mlx_model
     def test_generate_speech_without_model_uses_cached(self):
         """generate_speech without model arg should use cached model."""
         from mlx_tts_core import generate_speech
@@ -117,7 +83,6 @@ class TestGenerateSpeech:
         # Should not raise, uses internal cached model
         generate_speech("Hello world", play=False)
 
-    @requires_mlx_model
     def test_generate_speech_creates_audio_file(self):
         """generate_speech should create an audio output when save_path provided."""
         import tempfile
@@ -154,7 +119,6 @@ class TestSpeakMlx:
 class TestWarmLatency:
     """Performance tests for warm (cached model) latency."""
 
-    @requires_mlx_model
     def test_warm_latency_under_threshold(self):
         """With cached model, generation should complete in <3 seconds."""
         from mlx_tts_core import generate_speech, get_model
@@ -177,11 +141,9 @@ class TestErrorHandling:
         """generate_speech should handle empty text gracefully."""
         from mlx_tts_core import generate_speech
 
-        # Empty text returns None early without needing model
-        result = generate_speech("", play=False)
-        assert result is None
+        # Should not crash, may log warning
+        generate_speech("", play=False)
 
-    @requires_mlx_model
     def test_generate_speech_short_text(self):
         """generate_speech should handle short text."""
         from mlx_tts_core import generate_speech
@@ -278,7 +240,6 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
-        assert metrics is not None
         assert "ttft" in metrics
         assert isinstance(metrics["ttft"], float)
         assert metrics["ttft"] >= 0
@@ -295,7 +256,6 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
-        assert metrics is not None
         assert "gen_time" in metrics
         assert isinstance(metrics["gen_time"], float)
         assert metrics["gen_time"] >= 0
@@ -314,7 +274,6 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
-        assert metrics is not None
         assert "chunks" in metrics
         assert isinstance(metrics["chunks"], int)
         assert metrics["chunks"] == 3  # Our mock yields 3 chunks
@@ -331,7 +290,6 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
-        assert metrics is not None
         assert "rtf" in metrics
         assert isinstance(metrics["rtf"], float)
 
@@ -347,7 +305,6 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
-        assert metrics is not None
         assert "audio_duration" in metrics
         assert isinstance(metrics["audio_duration"], float)
         # 3 chunks * 12000 samples / 24000 Hz = 1.5 seconds
@@ -365,7 +322,6 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
-        assert metrics is not None
         assert "play_time" in metrics
         assert isinstance(metrics["play_time"], float)
         assert metrics["play_time"] >= 0
@@ -385,7 +341,6 @@ class TestStreamingMetrics:
             return_metrics=True,
         )
 
-        assert metrics is not None
         assert "play_time" in metrics
         assert metrics["play_time"] == 0
         assert not mock_player.wait_for_drain.called

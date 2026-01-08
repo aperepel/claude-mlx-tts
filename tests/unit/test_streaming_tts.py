@@ -5,7 +5,7 @@ Run with: uv run pytest tests/unit/test_streaming_tts.py -v
 """
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 
 import pytest
 
@@ -169,6 +169,7 @@ class TestStreamingFileSaveConstraint:
 
     def test_streaming_mode_warns_about_save_path(self):
         """Streaming mode should warn when save_path is specified."""
+        import logging
         from mlx_tts_core import generate_speech
 
         with patch("mlx_audio.tts.generate.generate_audio"):

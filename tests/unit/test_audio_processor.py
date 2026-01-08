@@ -5,8 +5,10 @@ Run with: uv run pytest tests/unit/test_audio_processor.py -v
 """
 import os
 import sys
+from unittest.mock import patch, MagicMock
 
 import numpy as np
+import pytest
 
 # Add scripts to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
@@ -304,7 +306,7 @@ class TestConfigIntegration:
 
     def test_create_processor_uses_config_defaults(self):
         """create_processor with no args should use config defaults."""
-        from audio_processor import create_processor
+        from audio_processor import create_processor, get_compressor_config
 
         # Should not raise - uses config defaults
         processor = create_processor(sample_rate=24000)
@@ -744,8 +746,7 @@ class TestOLAProcessorBasicBehavior:
             def __init__(self, data):
                 self._data = data
                 self.__module__ = 'mlx.core'
-            def __array__(self, dtype=None, copy=None):
-                # NumPy 2.0+ requires dtype and copy keyword arguments
+            def __array__(self):
                 return self._data
             def __len__(self):
                 return len(self._data)
@@ -784,7 +785,7 @@ class TestOLAChunkStitching:
         chunk1 = np.random.randn(12000).astype(np.float32)
         chunk2 = np.random.randn(12000).astype(np.float32)
 
-        _result1 = processor(chunk1)  # Outputs len - crossfade_samples
+        result1 = processor(chunk1)  # Outputs len - crossfade_samples
         result2 = processor(chunk2)  # Outputs len (crossfade + rest - new tail)
 
         # Second chunk: crossfade region + middle = len - crossfade_samples
@@ -800,7 +801,7 @@ class TestOLAChunkStitching:
         processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
 
         chunk = np.random.randn(12000).astype(np.float32)
-        _result1 = processor(chunk)
+        result1 = processor(chunk)
         result2 = processor(None)  # Flush with None
 
         # Flush should return the crossfade_samples that were held
@@ -838,6 +839,7 @@ class TestOLAContinuity:
         from audio_processor import create_ola_processor
         sample_rate = 24000
         crossfade_ms = 20.0
+        crossfade_samples = int(sample_rate * crossfade_ms / 1000)
 
         processor = create_ola_processor(sample_rate=sample_rate, crossfade_ms=crossfade_ms)
 

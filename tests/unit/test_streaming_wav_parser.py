@@ -8,6 +8,7 @@ Run with: uv run pytest tests/unit/test_streaming_wav_parser.py -v
 """
 import os
 import sys
+import io
 import struct
 
 import numpy as np
@@ -102,7 +103,6 @@ class TestWavHeaderParsing:
         parser = StreamingWavParser()
         parser.feed(wav_bytes)
 
-        assert parser.header is not None
         assert parser.header.sample_rate == 44100
 
     def test_parse_stereo_channels(self):
@@ -117,7 +117,6 @@ class TestWavHeaderParsing:
         parser = StreamingWavParser()
         parser.feed(wav_bytes)
 
-        assert parser.header is not None
         assert parser.header.channels == 2
 
     def test_parse_data_size(self):
@@ -130,7 +129,6 @@ class TestWavHeaderParsing:
         parser = StreamingWavParser()
         parser.feed(wav_bytes)
 
-        assert parser.header is not None
         assert parser.header.data_size == 4800  # 2400 samples * 2 bytes
 
     def test_header_not_available_until_enough_bytes(self):
@@ -220,7 +218,6 @@ class TestPartialChunkHandling:
         audio2 = parser.read_audio()
 
         # Should have remaining 99 samples
-        assert audio2 is not None
         assert len(audio2) == 99
 
 
@@ -238,7 +235,6 @@ class TestAudioDataIteration:
         parser.feed(wav_bytes)
         result = parser.read_audio()
 
-        assert result is not None
         assert result.dtype == np.float32
 
     def test_read_audio_normalized_range(self):
@@ -253,9 +249,8 @@ class TestAudioDataIteration:
         parser.feed(wav_bytes)
         result = parser.read_audio()
 
-        assert result is not None
-        assert np.amax(result) <= 1.0
-        assert np.amin(result) >= -1.0
+        assert np.max(result) <= 1.0
+        assert np.min(result) >= -1.0
 
     def test_read_audio_preserves_waveform(self):
         """Parsed audio should closely match original."""
@@ -269,7 +264,6 @@ class TestAudioDataIteration:
         result = parser.read_audio()
 
         # Should be close (16-bit quantization introduces small error)
-        assert result is not None
         np.testing.assert_allclose(result, original, atol=0.001)
 
     def test_read_audio_empty_before_data(self):
@@ -294,7 +288,6 @@ class TestAudioDataIteration:
         result1 = parser.read_audio()
         result2 = parser.read_audio()
 
-        assert result1 is not None
         assert len(result1) == 100
         assert result2 is None or len(result2) == 0
 
@@ -401,7 +394,6 @@ class TestStreamingIntegration:
         assert len(total_audio) == sample_rate  # 1 second = 24000 samples
 
         # Verify header parsed correctly
-        assert parser.header is not None
         assert parser.header.sample_rate == sample_rate
 
     def test_is_complete_property(self):

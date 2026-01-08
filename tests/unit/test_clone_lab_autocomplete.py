@@ -12,6 +12,7 @@ import os
 import sys
 from unittest.mock import patch, MagicMock
 
+import pytest
 
 # Add scripts to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
@@ -261,6 +262,7 @@ class TestCacheInvalidationOnFocus:
     def test_handle_focus_change_method_exists(self):
         """WavPathAutoComplete should override _handle_focus_change."""
         from tts_tui import WavPathAutoComplete
+        import inspect
 
         # Check that the method is defined in WavPathAutoComplete, not just inherited
         assert "_handle_focus_change" in WavPathAutoComplete.__dict__, \
@@ -269,10 +271,11 @@ class TestCacheInvalidationOnFocus:
     def test_cache_cleared_on_focus_gain(self):
         """Cache should be cleared when input gains focus."""
         from tts_tui import WavPathAutoComplete
+        from unittest.mock import MagicMock, patch
 
         # Create instance with mocked target
         autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
-        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}  # type: ignore[assignment]
+        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}
         autocomplete.clear_directory_cache = MagicMock()
 
         # Mock the parent class's _handle_focus_change
@@ -285,9 +288,10 @@ class TestCacheInvalidationOnFocus:
     def test_cache_not_cleared_on_focus_loss(self):
         """Cache should NOT be cleared when input loses focus."""
         from tts_tui import WavPathAutoComplete
+        from unittest.mock import MagicMock, patch
 
         autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
-        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}  # type: ignore[assignment]
+        autocomplete._directory_cache = {"test_dir": ["cached_entries"]}
         autocomplete.clear_directory_cache = MagicMock()
 
         with patch.object(WavPathAutoComplete.__bases__[0], '_handle_focus_change'):
@@ -299,9 +303,10 @@ class TestCacheInvalidationOnFocus:
     def test_parent_handle_focus_change_called(self):
         """Parent _handle_focus_change should always be called."""
         from tts_tui import WavPathAutoComplete
+        from unittest.mock import MagicMock, patch
 
         autocomplete = WavPathAutoComplete.__new__(WavPathAutoComplete)
-        autocomplete._directory_cache = MagicMock()  # Mock the LRUCache
+        autocomplete._directory_cache = {}
         autocomplete.clear_directory_cache = MagicMock()
 
         with patch.object(WavPathAutoComplete.__bases__[0], '_handle_focus_change') as mock_parent:

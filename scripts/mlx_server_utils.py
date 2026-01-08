@@ -34,7 +34,6 @@ import sys
 import time
 from typing import Any, Generator
 
-import numpy as np
 import requests
 
 from streaming_wav_parser import StreamingWavParser, WavHeader, WavParseError
@@ -384,7 +383,7 @@ def stream_tts_http(
     chunk_size: int = 8192,
     use_true_streaming: bool = True,
     streaming_interval: float = 0.5,
-) -> Generator[tuple[WavHeader | None, np.ndarray], None, None]:
+) -> Generator[tuple[WavHeader, "np.ndarray"], None, None]:
     """
     Stream TTS audio chunks from the server via HTTP.
 
@@ -411,6 +410,7 @@ def stream_tts_http(
         ServerStartError: If server fails to start.
         TTSRequestError: If TTS request fails.
     """
+    import numpy as np
 
     if not text or not text.strip():
         log.warning("Empty text, skipping TTS")
@@ -424,7 +424,7 @@ def stream_tts_http(
     else:
         url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
-    payload: dict[str, str | float] = {
+    payload = {
         "input": text,
         "model": MLX_MODEL,
     }
@@ -513,6 +513,7 @@ def play_streaming_http(
         ServerStartError: If server fails to start.
         TTSRequestError: If TTS request fails.
     """
+    import numpy as np
 
     # Handle empty text
     if not text or not text.strip():
@@ -535,7 +536,7 @@ def play_streaming_http(
     else:
         url = f"http://{TTS_SERVER_HOST}:{TTS_SERVER_PORT}/v1/audio/speech"
 
-    payload: dict[str, str | float] = {
+    payload = {
         "input": text,
         "model": MLX_MODEL,
     }

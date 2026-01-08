@@ -5,5 +5,6 @@
   "author": {
     "name": "aperepel"
   },
-  "keywords": ["tts", "voice-cloning", "mlx", "chatterbox", "apple-silicon", "notification"]
+  "keywords": ["tts", "voice-cloning", "mlx", "chatterbox", "apple-silicon", "notification"],
+  "commands": "./commands/"
 }

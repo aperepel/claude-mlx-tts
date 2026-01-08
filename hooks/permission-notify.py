@@ -9,22 +9,33 @@ Triggers when:
 Does NOT auto-approve - just speaks a notification and lets normal permission flow continue.
 """
 import json
+import logging
 import os
 import sys
 from datetime import datetime
 
-# Add scripts directory to path for importing TTS functions (must be before local imports)
+# Add scripts directory to path for importing TTS functions
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "scripts")
 sys.path.insert(0, SCRIPTS_DIR)
-
-from plugin_logging import setup_plugin_logging, LOG_DIR  # noqa: E402
 
 # =============================================================================
 # LOGGING SETUP
 # =============================================================================
 
-log = setup_plugin_logging()
+LOG_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "logs")
+LOG_FILE = os.path.join(LOG_DIR, "permission-notify.log")
+
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+    ]
+)
+log = logging.getLogger(__name__)
 
 # =============================================================================
 # CONFIGURATION
@@ -43,7 +54,7 @@ MIN_AUTO_APPROVED_TOOLS = int(os.environ.get("PERMISSION_MIN_TOOLS", "3"))
 NOTIFY_COOLDOWN_SECS = int(os.environ.get("PERMISSION_COOLDOWN", "60"))
 
 # Path to track last notification time
-NOTIFY_TIMESTAMP_FILE = LOG_DIR / ".last_permission_notify"
+NOTIFY_TIMESTAMP_FILE = os.path.join(LOG_DIR, ".last_permission_notify")
 
 # =============================================================================
 # IMPLEMENTATION

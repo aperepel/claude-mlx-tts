@@ -10,6 +10,7 @@ Triggers when:
 Uses macOS 'say' by default. Install MLX extra for voice cloning: uv sync --extra mlx
 """
 import json
+import logging
 import re
 import subprocess
 import os
@@ -20,9 +21,19 @@ from datetime import datetime
 # LOGGING SETUP
 # =============================================================================
 
-from plugin_logging import setup_plugin_logging
+LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
+LOG_FILE = os.path.join(LOG_DIR, "tts-notify.log")
 
-log = setup_plugin_logging()
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+    ]
+)
+log = logging.getLogger(__name__)
 
 # =============================================================================
 # CONFIGURATION - Edit these to customize behavior
@@ -160,7 +171,7 @@ def should_trigger_tts(transcript_path: str) -> tuple[bool, str, int, float, boo
 
     # Option A: Skip TTS if this turn ran a TTS script via Bash
     # Check assistant tool calls for our script names (more reliable than parsing user message)
-    TTS_SCRIPTS = ["say.sh", "summary-say.sh", "tts-start.sh", "tts-stop.sh", "tts-status.sh", "tts-init.sh", "tts-mute.sh"]
+    TTS_SCRIPTS = ["say.sh", "summary-say.sh", "tts-start.sh", "tts-stop.sh", "tts-status.sh", "tts-init.sh"]
     for entry in entries[last_user_idx:]:
         if entry.get("type") != "assistant":
             continue
@@ -174,7 +185,7 @@ def should_trigger_tts(transcript_path: str) -> tuple[bool, str, int, float, boo
                 continue
             command = block.get("input", {}).get("command", "")
             if any(script in command for script in TTS_SCRIPTS):
-                log.info("Skipping TTS: turn included TTS script in Bash call")
+                log.info(f"Skipping TTS: turn included TTS script in Bash call")
                 return False, "", 0, 0.0, False
 
     thinking_triggered = any(kw in user_text_lower for kw in THINKING_KEYWORDS)
@@ -303,17 +314,6 @@ def main():
     if hook_input.get("stop_hook_active", False):
         log.info("Stop hook already active, preventing recursion")
         return
-
-    # Check if TTS is muted
-    try:
-        from tts_mute import is_muted, get_mute_status, format_remaining_time
-        if is_muted():
-            status = get_mute_status()
-            remaining = format_remaining_time(status.remaining_seconds)
-            log.info(f"TTS muted ({remaining} remaining), skipping")
-            return
-    except ImportError:
-        pass  # tts_mute not available, continue normally
 
     transcript_path = hook_input.get("transcript_path", "")
 

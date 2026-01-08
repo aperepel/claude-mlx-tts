@@ -1,4 +1,4 @@
-# SQLite databases
+# SQLite databases (local only)
 *.db
 *.db?*
 *.db-journal
@@ -12,7 +12,7 @@ daemon.pid
 bd.sock
 sync-state.json
 
-# Local version tracking (prevents upgrade notification spam after git ops)
+# Local version tracking
 .local_version
 
 # Legacy database files

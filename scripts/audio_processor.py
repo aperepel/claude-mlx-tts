@@ -114,7 +114,7 @@ def create_processor(
     Returns:
         Callable that processes audio chunks while maintaining state.
     """
-    from pedalboard import Pedalboard, Compressor, Limiter, Gain, Plugin  # pyright: ignore[reportPrivateImportUsage]
+    from pedalboard import Pedalboard, Compressor, Limiter, Gain
 
     # Use defaults for any None values
     config = get_compressor_config()
@@ -134,7 +134,7 @@ def create_processor(
 
     # Build processing chain based on what's enabled
     # Signal chain: Input Gain → [Compressor → Makeup Gain] → [Limiter] → Master Gain
-    chain: list[Plugin] = [Gain(gain_db=input_gain_db)]
+    chain = [Gain(gain_db=input_gain_db)]
 
     if comp_enabled:
         chain.append(Compressor(
@@ -197,7 +197,7 @@ def create_processor(
 
         # Store last sample of INPUT for next chunk's interpolation
         if len(audio_f32) > 0:
-            state["prev_last"] = float(audio_f32[-1])  # pyright: ignore[reportArgumentType]
+            state["prev_last"] = float(audio_f32[-1])
 
         # pedalboard expects shape (channels, samples) or (samples,) for mono
         # MLX TTS outputs mono as (samples,), need to reshape for pedalboard
@@ -350,7 +350,7 @@ def create_ola_processor(
                 # Append to existing buffer
                 combined = np.concatenate([state["tail_unfaded"], audio_f32])
                 if len(combined) < crossfade_samples:
-                    state["tail_unfaded"] = combined  # pyright: ignore[reportArgumentType]
+                    state["tail_unfaded"] = combined
                     state["tail"] = None  # Will recompute when we have enough
                     return np.array([], dtype=np.float32)
                 else:
@@ -360,7 +360,7 @@ def create_ola_processor(
                     state["tail_unfaded"] = None
             else:
                 # First small chunk - just buffer it
-                state["tail_unfaded"] = audio_f32.copy()  # pyright: ignore[reportArgumentType]
+                state["tail_unfaded"] = audio_f32.copy()
                 return np.array([], dtype=np.float32)
 
         # Split current chunk into head, middle, and tail
@@ -387,8 +387,8 @@ def create_ola_processor(
             else:
                 # Chunk is exactly crossfade_samples - just fade in
                 output = faded_head
-            state["tail"] = faded_tail  # pyright: ignore[reportArgumentType]
-            state["tail_unfaded"] = tail_unfaded  # pyright: ignore[reportArgumentType]
+            state["tail"] = faded_tail
+            state["tail_unfaded"] = tail_unfaded
             return output.astype(np.float32)
 
         # Crossfade: previous faded tail + current faded head
@@ -401,8 +401,8 @@ def create_ola_processor(
             output = crossfade
 
         # Save new tail for next chunk
-        state["tail"] = faded_tail  # pyright: ignore[reportArgumentType]
-        state["tail_unfaded"] = tail_unfaded  # pyright: ignore[reportArgumentType]
+        state["tail"] = faded_tail
+        state["tail_unfaded"] = tail_unfaded
 
         return output.astype(np.float32)
 

@@ -81,7 +81,7 @@ class TestLoadConfig:
 
     def test_load_config_merges_with_defaults(self):
         """load_config should merge file config with defaults for missing keys."""
-        from tts_config import load_config
+        from tts_config import load_config, DEFAULT_CONFIG
 
         with tempfile.TemporaryDirectory() as tmpdir:
             config_file = Path(tmpdir) / "config.json"

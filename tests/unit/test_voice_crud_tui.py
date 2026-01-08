@@ -10,7 +10,11 @@ Run with: uv run pytest tests/unit/test_voice_crud_tui.py -v
 """
 import os
 import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import patch, MagicMock
 
+import pytest
 
 # Add scripts to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
@@ -192,7 +196,7 @@ class TestVoiceSelectorActionBar:
     def test_voice_selector_has_copy_button(self):
         """VoiceSelector should have a Copy button."""
         from tts_tui import VoiceSelector
-        _selector = VoiceSelector()
+        selector = VoiceSelector()
         # Selector exists with CopyVoiceRequested message
         assert hasattr(VoiceSelector, "CopyVoiceRequested")
 
