@@ -10,6 +10,7 @@ Does NOT auto-approve - just speaks a notification and lets normal permission fl
 """
 import json
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -138,7 +139,9 @@ def count_auto_approved_tools_since_last_user(transcript_path: str) -> int:
 def is_in_interview_session(transcript_path: str) -> bool:
     """Check if we're currently in an interview or blitz session.
 
-    Looks for recent Skill tool invocations with interview or blitz skill names.
+    Detects interview context via:
+    1. User slash commands like /blitz or /interview
+    2. Assistant Skill tool calls with interview/blitz skill names
     """
     entries = parse_transcript(transcript_path)
     if not entries:
@@ -147,44 +150,73 @@ def is_in_interview_session(transcript_path: str) -> bool:
 
     log.info(f"is_in_interview_session: checking {len(entries)} entries from {transcript_path}")
 
-    # Look for Skill tool calls in recent entries (last 100 to cover long sessions)
+    # Skill names that indicate interview/blitz sessions
     interview_skills = {"interview", "blitz", "claude-spec-builder:interview", "claude-spec-builder:blitz"}
+
+    # Slash command patterns to detect in user messages (case-insensitive)
+    slash_command_pattern = re.compile(
+        r'^/(interview|blitz|claude-spec-builder:interview|claude-spec-builder:blitz)\b',
+        re.IGNORECASE
+    )
 
     skill_tools_found = []
     all_tools_found = []
+    user_slash_commands = []
 
     for entry in reversed(entries[-100:]):
         entry_type = entry.get("type")
-        if entry_type != "assistant":
-            continue
 
-        message = entry.get("message", {})
-        content = message.get("content", [])
+        # Check user messages for slash commands
+        if entry_type == "user":
+            message = entry.get("message", {})
+            content = message.get("content", "")
 
-        if not isinstance(content, list):
-            # Log if content is not a list (unexpected format)
-            log.info(f"is_in_interview_session: unexpected content format: {type(content)}")
-            continue
+            # Handle string content (direct user message)
+            if isinstance(content, str):
+                if slash_command_pattern.match(content.strip()):
+                    user_slash_commands.append(content.strip()[:50])
+                    log.info(f"Detected interview session: user slash command '{content.strip()[:50]}'")
+                    return True
 
-        for block in content:
-            if not isinstance(block, dict):
+            # Handle list content (may contain text blocks)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "")
+                        if slash_command_pattern.match(text.strip()):
+                            user_slash_commands.append(text.strip()[:50])
+                            log.info(f"Detected interview session: user slash command '{text.strip()[:50]}'")
+                            return True
+
+        # Check assistant messages for Skill tool calls
+        elif entry_type == "assistant":
+            message = entry.get("message", {})
+            content = message.get("content", [])
+
+            if not isinstance(content, list):
+                log.info(f"is_in_interview_session: unexpected content format: {type(content)}")
                 continue
 
-            block_type = block.get("type")
-            if block_type == "tool_use":
-                block_name = block.get("name", "unknown")
-                block_input = block.get("input", {})
-                all_tools_found.append(block_name)
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
 
-                if block_name == "Skill":
-                    skill_name = block_input.get("skill", "")
-                    skill_tools_found.append(skill_name)
-                    if skill_name in interview_skills:
-                        log.info(f"Detected interview session: skill={skill_name}")
-                        return True
+                block_type = block.get("type")
+                if block_type == "tool_use":
+                    block_name = block.get("name", "unknown")
+                    block_input = block.get("input", {})
+                    all_tools_found.append(block_name)
+
+                    if block_name == "Skill":
+                        skill_name = block_input.get("skill", "")
+                        skill_tools_found.append(skill_name)
+                        if skill_name in interview_skills:
+                            log.info(f"Detected interview session: skill={skill_name}")
+                            return True
 
     log.info(f"is_in_interview_session: all tools: {all_tools_found[:20]}")  # First 20
     log.info(f"is_in_interview_session: Skill tools found: {skill_tools_found}")
+    log.info(f"is_in_interview_session: user slash commands: {user_slash_commands}")
     return False
 
 

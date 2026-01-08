@@ -639,6 +639,7 @@ class TestMainIntegration:
 
         hook_input = {
             "transcript_path": temp_transcript,
+            "tool_name": "Bash",
             "message": "Claude wants to use Bash"
         }
 
@@ -665,6 +666,7 @@ class TestMainIntegration:
 
         hook_input = {
             "transcript_path": temp_transcript,
+            "tool_name": "Edit",
             "message": "Claude wants to use Edit"
         }
 
@@ -844,3 +846,156 @@ class TestEdgeCases:
         result = get_time_since_last_user_message(temp_transcript)
         # Should parse correctly
         assert 9.0 <= result <= 11.0
+
+
+# =============================================================================
+# TEST: is_in_interview_session()
+# =============================================================================
+
+def create_assistant_skill_tool_call(skill_name: str, timestamp=None):
+    """Create an assistant message with a Skill tool call."""
+    if timestamp is None:
+        timestamp = datetime.now(timezone.utc).isoformat()
+    return {
+        "type": "assistant",
+        "timestamp": timestamp,
+        "message": {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "skill_1",
+                    "name": "Skill",
+                    "input": {"skill": skill_name}
+                }
+            ]
+        }
+    }
+
+
+class TestIsInInterviewSession:
+    """Tests for detecting interview/blitz session context."""
+
+    def test_detects_assistant_skill_tool_call_blitz(self, temp_transcript):
+        """Should detect interview session when assistant calls Skill tool with 'blitz'."""
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("Hello")) + '\n')
+            f.write(json.dumps(create_assistant_skill_tool_call("blitz")) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is True
+
+    def test_detects_assistant_skill_tool_call_interview(self, temp_transcript):
+        """Should detect interview session when assistant calls Skill tool with 'interview'."""
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("Hello")) + '\n')
+            f.write(json.dumps(create_assistant_skill_tool_call("interview")) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is True
+
+    def test_detects_assistant_skill_tool_call_fully_qualified(self, temp_transcript):
+        """Should detect interview session with fully qualified skill name."""
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("Hello")) + '\n')
+            f.write(json.dumps(create_assistant_skill_tool_call("claude-spec-builder:blitz")) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is True
+
+    def test_detects_user_slash_command_blitz(self, temp_transcript):
+        """Should detect interview session when user types /blitz command.
+
+        This is the BUG being fixed: user slash commands weren't detected before.
+        """
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w') as f:
+            # User types /blitz command directly
+            f.write(json.dumps(create_user_message("/blitz bd-123")) + '\n')
+            # Claude responds with some tool calls (but not Skill for blitz)
+            f.write(json.dumps(create_assistant_message_with_tools(["Bash", "Read"])) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is True
+
+    def test_detects_user_slash_command_interview(self, temp_transcript):
+        """Should detect interview session when user types /interview command."""
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("/interview")) + '\n')
+            f.write(json.dumps(create_assistant_message_with_tools(["Read"])) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is True
+
+    def test_detects_user_slash_command_with_plugin_prefix(self, temp_transcript):
+        """Should detect interview session with plugin-prefixed slash command."""
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("/claude-spec-builder:blitz bd-456")) + '\n')
+            f.write(json.dumps(create_assistant_text_message("Starting blitz...")) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is True
+
+    def test_returns_false_for_non_interview_session(self, temp_transcript):
+        """Should return False when no interview/blitz activity detected."""
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("Fix the bug")) + '\n')
+            f.write(json.dumps(create_assistant_message_with_tools(["Bash", "Read", "Edit"])) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is False
+
+    def test_returns_false_for_empty_transcript(self, temp_transcript):
+        """Should return False for empty transcript."""
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w'):
+            pass
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is False
+
+    def test_returns_false_for_missing_file(self):
+        """Should return False for non-existent transcript file."""
+        from permission_notify import is_in_interview_session
+
+        result = is_in_interview_session("/nonexistent/transcript.jsonl")
+        assert result is False
+
+    def test_ignores_non_interview_skill_calls(self, temp_transcript):
+        """Should not detect interview for unrelated Skill tool calls."""
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("Check TTS status")) + '\n')
+            f.write(json.dumps(create_assistant_skill_tool_call("claude-mlx-tts:say")) + '\n')
+            f.write(json.dumps(create_assistant_skill_tool_call("commit")) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        assert result is False
+
+    def test_user_slash_command_case_insensitive(self, temp_transcript):
+        """Should detect interview commands case-insensitively."""
+        from permission_notify import is_in_interview_session
+
+        with open(temp_transcript, 'w') as f:
+            f.write(json.dumps(create_user_message("/BLITZ bd-789")) + '\n')
+            f.write(json.dumps(create_assistant_text_message("Starting...")) + '\n')
+
+        result = is_in_interview_session(temp_transcript)
+        # Note: This test may need adjustment based on desired behavior
+        # For now, testing lowercase only is acceptable
+        assert result is True
