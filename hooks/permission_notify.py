@@ -135,6 +135,75 @@ def count_auto_approved_tools_since_last_user(transcript_path: str) -> int:
     return tool_count
 
 
+def is_in_interview_session(transcript_path: str) -> bool:
+    """Check if we're currently in an interview or blitz session.
+
+    Looks for recent Skill tool invocations with interview or blitz skill names.
+    """
+    entries = parse_transcript(transcript_path)
+    if not entries:
+        log.info("is_in_interview_session: no entries found")
+        return False
+
+    log.info(f"is_in_interview_session: checking {len(entries)} entries from {transcript_path}")
+
+    # Look for Skill tool calls in recent entries (last 100 to cover long sessions)
+    interview_skills = {"interview", "blitz", "claude-spec-builder:interview", "claude-spec-builder:blitz"}
+
+    skill_tools_found = []
+    all_tools_found = []
+
+    for entry in reversed(entries[-100:]):
+        entry_type = entry.get("type")
+        if entry_type != "assistant":
+            continue
+
+        message = entry.get("message", {})
+        content = message.get("content", [])
+
+        if not isinstance(content, list):
+            # Log if content is not a list (unexpected format)
+            log.info(f"is_in_interview_session: unexpected content format: {type(content)}")
+            continue
+
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+
+            block_type = block.get("type")
+            if block_type == "tool_use":
+                block_name = block.get("name", "unknown")
+                block_input = block.get("input", {})
+                all_tools_found.append(block_name)
+
+                if block_name == "Skill":
+                    skill_name = block_input.get("skill", "")
+                    skill_tools_found.append(skill_name)
+                    if skill_name in interview_skills:
+                        log.info(f"Detected interview session: skill={skill_name}")
+                        return True
+
+    log.info(f"is_in_interview_session: all tools: {all_tools_found[:20]}")  # First 20
+    log.info(f"is_in_interview_session: Skill tools found: {skill_tools_found}")
+    return False
+
+
+def extract_question_text(tool_input: dict) -> str | None:
+    """Extract the question text from AskUserQuestion tool_input.
+
+    Returns the first question's text, or None if not found.
+    """
+    questions = tool_input.get("questions", [])
+    if not questions or not isinstance(questions, list):
+        return None
+
+    first_question = questions[0]
+    if not isinstance(first_question, dict):
+        return None
+
+    return first_question.get("question")
+
+
 def is_within_cooldown() -> bool:
     """Check if we're within the notification cooldown period."""
     try:
@@ -203,6 +272,37 @@ def speak_mlx(message: str, voice: str | None = None):
 # Default permission phrase template (fallback if config unavailable)
 PERMISSION_PHRASE_DEFAULT = "Claude needs permission to run {tool_name}."
 
+# Conversational prefixes for interview questions (rotated for variety)
+QUESTION_PREFIXES = [
+    "So, ",
+    "Now, ",
+    "Let me ask, ",
+    "Here's a question: ",
+    "Tell me, ",
+]
+
+
+def make_conversational_question(question: str) -> str:
+    """Transform a question into a more conversational form.
+
+    Applies transformations based on the TTS integration guidelines:
+    - Add conversational starters
+    - Use "we" instead of "you" for collaborative feel
+    """
+    import random
+
+    # Pick a random prefix for variety
+    prefix = random.choice(QUESTION_PREFIXES)
+
+    # Simple transformations for collaborative feel
+    # (keep it simple - full NLP would be overkill)
+    conversational = question
+    conversational = conversational.replace("you trying", "we trying")
+    conversational = conversational.replace("you want", "we want")
+    conversational = conversational.replace("should we use", "would work best")
+
+    return f"{prefix}{conversational}"
+
 
 def speak_notification(tool_name: str):
     """Speak the permission notification using TTS."""
@@ -228,6 +328,27 @@ def speak_notification(tool_name: str):
         speak_say(message)
 
 
+def speak_interview_question(question: str):
+    """Speak an interview question using TTS with conversational framing.
+
+    Uses the active (main) voice, not the permission hook voice, since
+    interview questions are conversational content, not system notifications.
+    """
+    message = make_conversational_question(question)
+
+    if is_mlx_available():
+        try:
+            from tts_config import get_active_voice
+            voice = get_active_voice()
+        except ImportError:
+            voice = None
+        log.info(f"TTS (interview question) [{voice}]: {message}")
+        speak_mlx(message, voice=voice)
+    else:
+        log.info(f"TTS (interview question) [Daniel] (MLX unavailable): {message}")
+        speak_say(message)
+
+
 def main():
     log.info("Permission hook invoked")
     hook_input = get_hook_input()
@@ -237,11 +358,6 @@ def main():
     log.info(f"Tool name from hook_input: {tool_name}")
     log.info(f"Full hook_input keys: {list(hook_input.keys())}")
     log.debug(f"Full hook_input: {json.dumps(hook_input, default=str)}")
-
-    # Skip TTS for AskUserQuestion - it's an interactive prompt, not a permission request
-    if tool_name == "AskUserQuestion":
-        log.info("Skipping TTS for AskUserQuestion tool")
-        sys.exit(1)
 
     # Skip TTS for TTS-related commands (they'll be auto-approved by approve-tts.py)
     tool_input = hook_input.get("tool_input", {})
@@ -289,6 +405,26 @@ def main():
         tool_count >= MIN_AUTO_APPROVED_TOOLS
     )
 
+    # Special handling for AskUserQuestion during interview/blitz sessions
+    if tool_name == "AskUserQuestion":
+        in_interview = is_in_interview_session(transcript_path)
+        question_text = extract_question_text(tool_input)
+
+        if in_interview and question_text:
+            # Interview questions are anchor points - always voice if user may be idle
+            if should_notify:
+                log.info(f"Interview question (idle detected): {question_text[:50]}...")
+                record_notification()
+                speak_interview_question(question_text)
+            else:
+                log.info("Interview question but user seems active, skipping TTS")
+        else:
+            # Non-interview AskUserQuestion - skip TTS (it's an interactive prompt)
+            log.info("AskUserQuestion outside interview context, skipping TTS")
+
+        sys.exit(1)
+
+    # Standard permission notification for other tools
     if should_notify:
         log.info(f"Triggering notification for tool: {tool_name}")
         record_notification()
