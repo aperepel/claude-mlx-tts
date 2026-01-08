@@ -8,7 +8,7 @@ Claude Summary TTS is a Claude Code plugin that provides text-to-speech notifica
 
 ## Architecture
 
-- **Plugin structure**: Uses `.claude-plugin/plugin.json` for plugin metadata and `hooks/hooks.json` for hook registration
+- **Plugin structure**: Uses `.claude-plugin/plugin.json` for plugin metadata and hooks (inline)
 - **Single script**: `scripts/tts-notify.py` contains all logic - threshold checks, summarization, and TTS playback
 - **Hook type**: Registers as a "Stop" hook that fires when Claude finishes responding
 - **Summarization**: Calls `claude -p` subprocess to generate brief spoken summaries
@@ -58,3 +58,26 @@ Note: Git tags are for release history only. The marketplace always pulls the la
 - `SAY_VOICE` / `SAY_RATE`: macOS voice settings
 - `MLX_MODEL`: HuggingFace model ID (auto-downloads on first use)
 - `MLX_VOICE_REF`: Path to voice reference WAV file
+
+## Plugin Development Notes
+
+### Invalid plugin.json Fields (Claude Code 2.1.x)
+
+Do NOT add `minClaudeVersion` to plugin.json - this field is invalid and causes plugin load failures:
+```
+"Validation errors: Unrecognized key: minClaudeVersion"
+```
+
+### Hooks Location
+
+Define hooks inline in `plugin.json` rather than a separate `hooks/hooks.json` for better reliability. The hooks section goes directly in plugin.json:
+
+```json
+{
+  "name": "your-plugin",
+  "hooks": {
+    "Stop": [...],
+    "PermissionRequest": [...]
+  }
+}
+```
