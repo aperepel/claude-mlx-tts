@@ -226,7 +226,14 @@ def should_trigger_tts(transcript_path: str) -> tuple[bool, str, int, float, boo
 
 def summarize(text: str) -> str:
     """Summarize text using Claude CLI."""
-    prompt = f"Convert to ONE short spoken sentence (max 15 words). No intro, no quotes, just the summary:\n\n{text[:1500]}"
+    # Use XML-style prompt to clearly separate instruction from content
+    prompt = f"""<task>Summarize in one spoken sentence (max 15 words)</task>
+
+<content>
+{text[:1500]}
+</content>
+
+<output>"""
 
     # Use clean TMPDIR to avoid Bun socket watching bug
     tmp_dir = "/tmp/claude-tts-tmp"
@@ -248,9 +255,15 @@ def summarize(text: str) -> str:
             env=env
         )
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except Exception:
-        pass
+            summary = result.stdout.strip()
+            # Clean any XML artifacts from response
+            summary = summary.replace("</output>", "").strip()
+            # Remove quotes if Claude wrapped it
+            if summary.startswith('"') and summary.endswith('"'):
+                summary = summary[1:-1]
+            return summary
+    except Exception as e:
+        log.warning(f"Summarize failed: {e}")
 
     return "Claude has completed its task."
 

@@ -654,18 +654,21 @@ def reset_voice_to_defaults(voice_name: str) -> None:
 # =============================================================================
 
 # Available hook types that can have voice overrides
-HOOK_TYPES = ["stop", "permission_request"]
+HOOK_TYPES = ["stop", "permission_request", "interview_question"]
 
 # Human-friendly labels for hook types
 HOOK_LABELS = {
     "stop": "Stop",
     "permission_request": "Permission",
+    "interview_question": "Interview",
 }
 
 # Default prompts for each hook type
+# Note: interview_question prompt is not used (question comes from tool input)
 HOOK_DEFAULT_PROMPTS = {
     "stop": "[clear throat] Attention on deck.",
     "permission_request": "Claude needs permission to run {tool_name}.",
+    "interview_question": "",  # Prompt comes from AskUserQuestion tool input
 }
 
 

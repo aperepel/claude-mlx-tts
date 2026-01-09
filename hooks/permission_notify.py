@@ -8,6 +8,7 @@ Triggers when:
 
 Does NOT auto-approve - just speaks a notification and lets normal permission flow continue.
 """
+import hashlib
 import json
 import os
 import sys
@@ -45,9 +46,62 @@ NOTIFY_COOLDOWN_SECS = int(os.environ.get("PERMISSION_COOLDOWN", "60"))
 # Path to track last notification time
 NOTIFY_TIMESTAMP_FILE = LOG_DIR / ".last_permission_notify"
 
+# Path to track recently voiced questions (for dedup)
+RECENT_QUESTIONS_FILE = LOG_DIR / ".recent_questions"
+
+# Dedup window: ignore duplicate question within this many seconds
+DEDUP_WINDOW_SECS = 5
+
 # =============================================================================
 # IMPLEMENTATION
 # =============================================================================
+
+
+def get_question_hash(tool_input: dict) -> str:
+    """Generate a hash of the question for dedup tracking."""
+    questions = tool_input.get("questions", [])
+    if questions:
+        # Hash the first question's text
+        q_text = questions[0].get("question", "") if isinstance(questions[0], dict) else ""
+        return hashlib.md5(q_text.encode()).hexdigest()[:12]
+    return ""
+
+
+def is_duplicate_question(question_hash: str) -> bool:
+    """Check if this question was recently voiced (within dedup window)."""
+    if not question_hash:
+        return False
+
+    try:
+        if RECENT_QUESTIONS_FILE.exists():
+            with open(RECENT_QUESTIONS_FILE) as f:
+                data = json.load(f)
+            last_hash = data.get("hash", "")
+            last_time = data.get("time", 0)
+
+            if last_hash == question_hash:
+                elapsed = datetime.now().timestamp() - last_time
+                if elapsed < DEDUP_WINDOW_SECS:
+                    return True
+    except (json.JSONDecodeError, IOError, KeyError):
+        pass
+
+    return False
+
+
+def record_question(question_hash: str) -> None:
+    """Record that we voiced this question."""
+    if not question_hash:
+        return
+
+    try:
+        with open(RECENT_QUESTIONS_FILE, 'w') as f:
+            json.dump({
+                "hash": question_hash,
+                "time": datetime.now().timestamp()
+            }, f)
+    except IOError:
+        pass
 
 
 def get_hook_input():
@@ -188,13 +242,25 @@ def speak_say(message: str):
     )
 
 
-def speak_mlx(message: str, voice: str | None = None):
-    """Speak using MLX voice cloning via HTTP server (non-blocking)."""
+def speak_mlx(message: str, voice: str | None = None, blocking: bool = False):
+    """Speak using MLX voice cloning via HTTP server.
+
+    Args:
+        message: Text to speak.
+        voice: Voice name to use.
+        blocking: If True, wait for TTS to complete before returning.
+                  Use for AskUserQuestion to ensure question is voiced
+                  before UI appears. If False, spawn detached subprocess.
+    """
     try:
-        from mlx_server_utils import speak_mlx_nonblocking
-        log.info("MLX TTS (HTTP, non-blocking)")
-        # Use non-blocking TTS so hook returns immediately
-        speak_mlx_nonblocking(message, voice=voice)
+        if blocking:
+            from mlx_server_utils import speak_mlx_http
+            log.info("MLX TTS (HTTP, blocking)")
+            speak_mlx_http(message, voice=voice)
+        else:
+            from mlx_server_utils import speak_mlx_nonblocking
+            log.info("MLX TTS (HTTP, non-blocking)")
+            speak_mlx_nonblocking(message, voice=voice)
     except Exception as e:
         log.warning(f"MLX TTS failed: {e}, falling back to macOS say")
         speak_say(message)
@@ -229,7 +295,11 @@ def make_conversational(question: str) -> str:
 
 
 def speak_question(question: str):
-    """Voice a question using TTS with conversational variation."""
+    """Voice a question using TTS with conversational variation.
+
+    Uses NON-BLOCKING TTS - audio plays in parallel with UI appearing.
+    Server should be warm from interview init, so latency is minimal.
+    """
     conversational = make_conversational(question)
 
     if is_mlx_available():
@@ -239,7 +309,7 @@ def speak_question(question: str):
         except (ImportError, KeyError):
             voice = None
         log.info(f"Interview question [{voice}]: {conversational[:60]}...")
-        speak_mlx(conversational, voice=voice)
+        speak_mlx(conversational, voice=voice, blocking=False)
     else:
         log.info(f"Interview question [Daniel]: {conversational[:60]}...")
         speak_say(conversational)
@@ -308,9 +378,17 @@ def main():
     # This ensures interview questions are always voiced regardless of whether
     # Claude remembers to invoke /say
     if tool_name == "AskUserQuestion":
+        # Dedup check: skip if we already voiced this exact question recently
+        # (can happen when multiple hook matchers fire for same tool)
+        question_hash = get_question_hash(tool_input)
+        if is_duplicate_question(question_hash):
+            log.info(f"Duplicate question detected (hash={question_hash}), skipping")
+            sys.exit(1)
+
         question_text = extract_question_text(tool_input)
         if question_text:
             log.info("AskUserQuestion detected, voicing question")
+            record_question(question_hash)
             speak_question(question_text)
         else:
             log.info("AskUserQuestion with no extractable question, skipping TTS")

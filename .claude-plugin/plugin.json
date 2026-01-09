@@ -20,6 +20,16 @@
     ],
     "PermissionRequest": [
       {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/run-permission-notify.sh",
+            "timeout": 30
+          }
+        ]
+      },
+      {
         "matcher": "",
         "hooks": [
           {
