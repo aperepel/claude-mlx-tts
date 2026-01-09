@@ -203,6 +203,47 @@ def speak_mlx(message: str, voice: str | None = None):
 # Default permission phrase template (fallback if config unavailable)
 PERMISSION_PHRASE_DEFAULT = "Claude needs permission to run {tool_name}."
 
+# Conversational prefixes for question voicing
+QUESTION_PREFIXES = ["So, ", "Now, ", "And ", ""]
+
+
+def extract_question_text(tool_input: dict) -> str | None:
+    """Extract the question text from AskUserQuestion tool input."""
+    questions = tool_input.get("questions", [])
+    if questions and isinstance(questions, list):
+        first_q = questions[0]
+        if isinstance(first_q, dict):
+            return first_q.get("question", "")
+    return None
+
+
+def make_conversational(question: str) -> str:
+    """Add conversational variation to a question for more natural voicing."""
+    import random
+    # Don't add prefix if question already starts with common words
+    lower_q = question.lower()
+    if any(lower_q.startswith(w) for w in ["so,", "now,", "and ", "let's", "what's"]):
+        return question
+    prefix = random.choice(QUESTION_PREFIXES)
+    return f"{prefix}{question}"
+
+
+def speak_question(question: str):
+    """Voice a question using TTS with conversational variation."""
+    conversational = make_conversational(question)
+
+    if is_mlx_available():
+        try:
+            from tts_config import get_effective_hook_voice
+            voice = get_effective_hook_voice("interview_question")
+        except (ImportError, KeyError):
+            voice = None
+        log.info(f"Interview question [{voice}]: {conversational[:60]}...")
+        speak_mlx(conversational, voice=voice)
+    else:
+        log.info(f"Interview question [Daniel]: {conversational[:60]}...")
+        speak_say(conversational)
+
 
 def speak_notification(tool_name: str):
     """Speak the permission notification using TTS."""
@@ -263,11 +304,16 @@ def main():
     except ImportError:
         pass  # tts_mute not available, continue normally
 
-    # Skip TTS for AskUserQuestion entirely
-    # Interview questions are voiced by the interview skill via /say invocations
-    # Non-interview AskUserQuestion is interactive and doesn't need TTS notification
+    # Voice AskUserQuestion questions directly (more reliable than skill invocation)
+    # This ensures interview questions are always voiced regardless of whether
+    # Claude remembers to invoke /say
     if tool_name == "AskUserQuestion":
-        log.info("AskUserQuestion tool, skipping TTS (skill handles interview voicing)")
+        question_text = extract_question_text(tool_input)
+        if question_text:
+            log.info("AskUserQuestion detected, voicing question")
+            speak_question(question_text)
+        else:
+            log.info("AskUserQuestion with no extractable question, skipping TTS")
         sys.exit(1)
 
     # Check cooldown (for non-interview permission notifications)
