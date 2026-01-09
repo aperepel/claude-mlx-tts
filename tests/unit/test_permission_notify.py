@@ -873,207 +873,27 @@ def create_assistant_skill_tool_call(skill_name: str, timestamp=None):
     }
 
 
-class TestIsInInterviewSession:
-    """Tests for detecting interview/blitz session context."""
-
-    def test_detects_assistant_skill_tool_call_blitz(self, temp_transcript):
-        """Should detect interview session when assistant calls Skill tool with 'blitz'."""
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("Hello")) + '\n')
-            f.write(json.dumps(create_assistant_skill_tool_call("blitz")) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is True
-
-    def test_detects_assistant_skill_tool_call_interview(self, temp_transcript):
-        """Should detect interview session when assistant calls Skill tool with 'interview'."""
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("Hello")) + '\n')
-            f.write(json.dumps(create_assistant_skill_tool_call("interview")) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is True
-
-    def test_detects_assistant_skill_tool_call_fully_qualified(self, temp_transcript):
-        """Should detect interview session with fully qualified skill name."""
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("Hello")) + '\n')
-            f.write(json.dumps(create_assistant_skill_tool_call("claude-spec-builder:blitz")) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is True
-
-    def test_detects_user_slash_command_blitz(self, temp_transcript):
-        """Should detect interview session when user types /blitz command.
-
-        This is the BUG being fixed: user slash commands weren't detected before.
-        """
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w') as f:
-            # User types /blitz command directly
-            f.write(json.dumps(create_user_message("/blitz bd-123")) + '\n')
-            # Claude responds with some tool calls (but not Skill for blitz)
-            f.write(json.dumps(create_assistant_message_with_tools(["Bash", "Read"])) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is True
-
-    def test_detects_user_slash_command_interview(self, temp_transcript):
-        """Should detect interview session when user types /interview command."""
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("/interview")) + '\n')
-            f.write(json.dumps(create_assistant_message_with_tools(["Read"])) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is True
-
-    def test_detects_user_slash_command_with_plugin_prefix(self, temp_transcript):
-        """Should detect interview session with plugin-prefixed slash command."""
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("/claude-spec-builder:blitz bd-456")) + '\n')
-            f.write(json.dumps(create_assistant_text_message("Starting blitz...")) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is True
-
-    def test_returns_false_for_non_interview_session(self, temp_transcript):
-        """Should return False when no interview/blitz activity detected."""
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("Fix the bug")) + '\n')
-            f.write(json.dumps(create_assistant_message_with_tools(["Bash", "Read", "Edit"])) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is False
-
-    def test_returns_false_for_empty_transcript(self, temp_transcript):
-        """Should return False for empty transcript."""
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w'):
-            pass
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is False
-
-    def test_returns_false_for_missing_file(self):
-        """Should return False for non-existent transcript file."""
-        from permission_notify import is_in_interview_session
-
-        result = is_in_interview_session("/nonexistent/transcript.jsonl")
-        assert result is False
-
-    def test_ignores_non_interview_skill_calls(self, temp_transcript):
-        """Should not detect interview for unrelated Skill tool calls."""
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("Check TTS status")) + '\n')
-            f.write(json.dumps(create_assistant_skill_tool_call("claude-mlx-tts:say")) + '\n')
-            f.write(json.dumps(create_assistant_skill_tool_call("commit")) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is False
-
-    def test_user_slash_command_case_insensitive(self, temp_transcript):
-        """Should detect interview commands case-insensitively."""
-        from permission_notify import is_in_interview_session
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("/BLITZ bd-789")) + '\n')
-            f.write(json.dumps(create_assistant_text_message("Starting...")) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        # Note: This test may need adjustment based on desired behavior
-        # For now, testing lowercase only is acceptable
-        assert result is True
-
-    def test_detects_slash_command_in_xml_tags(self, temp_transcript):
-        """Should detect interview/blitz in Claude Code's XML command format.
-
-        Real-world slash commands are wrapped in XML tags like:
-        <command-message>claude-spec-builder:blitz</command-message>
-        <command-name>/claude-spec-builder:blitz</command-name>
-        <command-args>kg-a9u.1.4</command-args>
-
-        The slash command is NOT at the start of the string.
-        """
-        from permission_notify import is_in_interview_session
-
-        # This is the actual format from a real Claude Code transcript
-        xml_wrapped_command = (
-            "<command-message>claude-spec-builder:blitz</command-message>\n"
-            "<command-name>/claude-spec-builder:blitz</command-name>\n"
-            "<command-args>kg-a9u.1.4</command-args>"
-        )
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message(xml_wrapped_command)) + '\n')
-            f.write(json.dumps(create_assistant_text_message("Running blitz...")) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is True
-
-    def test_detects_slash_command_in_xml_interview(self, temp_transcript):
-        """Should detect /interview in XML-wrapped format."""
-        from permission_notify import is_in_interview_session
-
-        xml_wrapped_command = (
-            "<command-message>interview</command-message>\n"
-            "<command-name>/interview</command-name>\n"
-            "<command-args>--voice</command-args>"
-        )
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message(xml_wrapped_command)) + '\n')
-
-        result = is_in_interview_session(temp_transcript)
-        assert result is True
-
-
 # =============================================================================
-# TEST: Interview Questions Always Voiced (No Cooldown)
+# TEST: AskUserQuestion Skips TTS
 # =============================================================================
 
-class TestInterviewQuestionsAlwaysVoiced:
-    """Tests verifying interview/blitz questions are ALWAYS voiced immediately.
+class TestAskUserQuestionSkipsTTS:
+    """Tests verifying AskUserQuestion tool always skips TTS in the permission hook.
 
-    Interview questions should bypass the normal "user seems active" check.
-    This is because interview questions are critical anchors that the user
-    needs to hear, regardless of recent activity.
+    Interview questions are voiced by the interview skill via /say invocations.
+    The permission hook should NOT also voice them (would cause double-voicing).
+    Non-interview AskUserQuestion is interactive and doesn't need TTS notification.
     """
 
-    def test_interview_question_voiced_even_when_user_recently_active(self, temp_transcript, temp_cooldown_file):
-        """CRITICAL: Interview questions should ALWAYS be voiced, even when user is active.
-
-        This is the core fix: the current code skips TTS when user seems active,
-        but interview questions should never be skipped regardless of activity.
-        """
+    def test_ask_user_question_skips_tts(self, temp_transcript, temp_cooldown_file):
+        """AskUserQuestion should skip TTS (skill handles interview voicing)."""
         from permission_notify import main
 
-        # User message only 5 seconds ago (normally "user seems active" = skip TTS)
         timestamp = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
 
-        # Setup: blitz session with recent user activity
         with open(temp_transcript, 'w') as f:
-            # User started a blitz
             f.write(json.dumps(create_user_message("/blitz bd-123", timestamp)) + '\n')
-            # Only 2 tools called (under threshold)
-            f.write(json.dumps(create_assistant_message_with_tools(["Read", "Grep"])) + '\n')
 
-        # Hook input: AskUserQuestion with interview question
         hook_input = {
             "transcript_path": temp_transcript,
             "tool_name": "AskUserQuestion",
@@ -1093,106 +913,20 @@ class TestInterviewQuestionsAlwaysVoiced:
 
         with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
             with patch('permission_notify.get_hook_input', return_value=hook_input):
-                with patch('permission_notify.speak_interview_question') as mock_speak:
+                with patch('permission_notify.speak_notification') as mock_speak:
                     with pytest.raises(SystemExit):
                         main()
 
-                    # CRITICAL: Interview question MUST be voiced even though user is active
-                    mock_speak.assert_called_once()
-                    # Verify the question text was passed
-                    call_args = mock_speak.call_args[0][0]
-                    assert "authentication" in call_args.lower()
+                    # TTS should NOT be called - skill handles interview voicing
+                    mock_speak.assert_not_called()
 
-    def test_interview_question_voiced_with_zero_idle_time(self, temp_transcript, temp_cooldown_file):
-        """Interview questions should be voiced even with 0 seconds idle time."""
+    def test_non_interview_ask_user_question_also_skips_tts(self, temp_transcript, temp_cooldown_file):
+        """Non-interview AskUserQuestion should also skip TTS."""
         from permission_notify import main
 
-        # User message just now (0 seconds ago)
-        timestamp = datetime.now(timezone.utc).isoformat()
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("/interview", timestamp)) + '\n')
-
-        hook_input = {
-            "transcript_path": temp_transcript,
-            "tool_name": "AskUserQuestion",
-            "tool_input": {
-                "questions": [
-                    {
-                        "question": "What is the main goal of this feature?",
-                        "header": "Goal",
-                        "options": [
-                            {"label": "Performance", "description": "Improve speed"},
-                            {"label": "UX", "description": "Better user experience"}
-                        ]
-                    }
-                ]
-            }
-        }
-
-        with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
-            with patch('permission_notify.get_hook_input', return_value=hook_input):
-                with patch('permission_notify.speak_interview_question') as mock_speak:
-                    with pytest.raises(SystemExit):
-                        main()
-
-                    # Must be voiced even with 0 idle time
-                    mock_speak.assert_called_once()
-
-    def test_interview_question_ignores_tool_count_threshold(self, temp_transcript, temp_cooldown_file):
-        """Interview questions should be voiced regardless of tool count.
-
-        Normal notifications require >= 3 tools, but interview questions
-        should voice even with 0 or 1 tools.
-        """
-        from permission_notify import main
-
-        # Recent user message
-        timestamp = (datetime.now(timezone.utc) - timedelta(seconds=3)).isoformat()
-
-        with open(temp_transcript, 'w') as f:
-            f.write(json.dumps(create_user_message("/blitz bd-456", timestamp)) + '\n')
-            # Only 1 tool (below threshold of 3)
-            f.write(json.dumps(create_assistant_message_with_tools(["Read"])) + '\n')
-
-        hook_input = {
-            "transcript_path": temp_transcript,
-            "tool_name": "AskUserQuestion",
-            "tool_input": {
-                "questions": [
-                    {
-                        "question": "Which database should we use?",
-                        "header": "DB",
-                        "options": [
-                            {"label": "PostgreSQL", "description": "Relational"},
-                            {"label": "MongoDB", "description": "Document store"}
-                        ]
-                    }
-                ]
-            }
-        }
-
-        with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
-            with patch('permission_notify.get_hook_input', return_value=hook_input):
-                with patch('permission_notify.speak_interview_question') as mock_speak:
-                    with pytest.raises(SystemExit):
-                        main()
-
-                    # Must be voiced regardless of tool count
-                    mock_speak.assert_called_once()
-
-    def test_non_interview_ask_user_question_still_skipped(self, temp_transcript, temp_cooldown_file):
-        """Non-interview AskUserQuestion should NOT be voiced (existing behavior).
-
-        This ensures we only changed interview behavior, not general AskUserQuestion.
-        """
-        from permission_notify import main
-
-        # Recent user message, normal context (not interview)
         timestamp = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
 
         with open(temp_transcript, 'w') as f:
-            # Normal task, not interview
             f.write(json.dumps(create_user_message("Fix the bug in auth", timestamp)) + '\n')
             f.write(json.dumps(create_assistant_message_with_tools(["Read"])) + '\n')
 
@@ -1215,9 +949,9 @@ class TestInterviewQuestionsAlwaysVoiced:
 
         with patch('permission_notify.NOTIFY_TIMESTAMP_FILE', temp_cooldown_file):
             with patch('permission_notify.get_hook_input', return_value=hook_input):
-                with patch('permission_notify.speak_interview_question') as mock_speak:
+                with patch('permission_notify.speak_notification') as mock_speak:
                     with pytest.raises(SystemExit):
                         main()
 
-                    # Should NOT be voiced (not in interview session)
+                    # Should NOT be voiced
                     mock_speak.assert_not_called()

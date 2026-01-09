@@ -10,7 +10,6 @@ Does NOT auto-approve - just speaks a notification and lets normal permission fl
 """
 import json
 import os
-import re
 import sys
 from datetime import datetime
 
@@ -136,108 +135,6 @@ def count_auto_approved_tools_since_last_user(transcript_path: str) -> int:
     return tool_count
 
 
-def is_in_interview_session(transcript_path: str) -> bool:
-    """Check if we're currently in an interview or blitz session.
-
-    Detects interview context via:
-    1. User slash commands like /blitz or /interview
-    2. Assistant Skill tool calls with interview/blitz skill names
-    """
-    entries = parse_transcript(transcript_path)
-    if not entries:
-        log.info("is_in_interview_session: no entries found")
-        return False
-
-    log.info(f"is_in_interview_session: checking {len(entries)} entries from {transcript_path}")
-
-    # Skill names that indicate interview/blitz sessions
-    interview_skills = {"interview", "blitz", "claude-spec-builder:interview", "claude-spec-builder:blitz"}
-
-    # Slash command patterns to detect in user messages (case-insensitive)
-    # Note: Slash commands may appear anywhere in content, not just at start
-    # (e.g., inside <command-name>/blitz</command-name> XML tags)
-    slash_command_pattern = re.compile(
-        r'/(interview|blitz|claude-spec-builder:interview|claude-spec-builder:blitz)\b',
-        re.IGNORECASE
-    )
-
-    skill_tools_found = []
-    all_tools_found = []
-    user_slash_commands = []
-
-    for entry in reversed(entries[-100:]):
-        entry_type = entry.get("type")
-
-        # Check user messages for slash commands
-        if entry_type == "user":
-            message = entry.get("message", {})
-            content = message.get("content", "")
-
-            # Handle string content (direct user message)
-            if isinstance(content, str):
-                if slash_command_pattern.search(content):
-                    user_slash_commands.append(content.strip()[:50])
-                    log.info(f"Detected interview session: user slash command '{content.strip()[:50]}'")
-                    return True
-
-            # Handle list content (may contain text blocks)
-            elif isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        text = block.get("text", "")
-                        if slash_command_pattern.search(text):
-                            user_slash_commands.append(text.strip()[:50])
-                            log.info(f"Detected interview session: user slash command '{text.strip()[:50]}'")
-                            return True
-
-        # Check assistant messages for Skill tool calls
-        elif entry_type == "assistant":
-            message = entry.get("message", {})
-            content = message.get("content", [])
-
-            if not isinstance(content, list):
-                log.info(f"is_in_interview_session: unexpected content format: {type(content)}")
-                continue
-
-            for block in content:
-                if not isinstance(block, dict):
-                    continue
-
-                block_type = block.get("type")
-                if block_type == "tool_use":
-                    block_name = block.get("name", "unknown")
-                    block_input = block.get("input", {})
-                    all_tools_found.append(block_name)
-
-                    if block_name == "Skill":
-                        skill_name = block_input.get("skill", "")
-                        skill_tools_found.append(skill_name)
-                        if skill_name in interview_skills:
-                            log.info(f"Detected interview session: skill={skill_name}")
-                            return True
-
-    log.info(f"is_in_interview_session: all tools: {all_tools_found[:20]}")  # First 20
-    log.info(f"is_in_interview_session: Skill tools found: {skill_tools_found}")
-    log.info(f"is_in_interview_session: user slash commands: {user_slash_commands}")
-    return False
-
-
-def extract_question_text(tool_input: dict) -> str | None:
-    """Extract the question text from AskUserQuestion tool_input.
-
-    Returns the first question's text, or None if not found.
-    """
-    questions = tool_input.get("questions", [])
-    if not questions or not isinstance(questions, list):
-        return None
-
-    first_question = questions[0]
-    if not isinstance(first_question, dict):
-        return None
-
-    return first_question.get("question")
-
-
 def is_within_cooldown() -> bool:
     """Check if we're within the notification cooldown period."""
     try:
@@ -306,37 +203,6 @@ def speak_mlx(message: str, voice: str | None = None):
 # Default permission phrase template (fallback if config unavailable)
 PERMISSION_PHRASE_DEFAULT = "Claude needs permission to run {tool_name}."
 
-# Conversational prefixes for interview questions (rotated for variety)
-QUESTION_PREFIXES = [
-    "So, ",
-    "Now, ",
-    "Let me ask, ",
-    "Here's a question: ",
-    "Tell me, ",
-]
-
-
-def make_conversational_question(question: str) -> str:
-    """Transform a question into a more conversational form.
-
-    Applies transformations based on the TTS integration guidelines:
-    - Add conversational starters
-    - Use "we" instead of "you" for collaborative feel
-    """
-    import random
-
-    # Pick a random prefix for variety
-    prefix = random.choice(QUESTION_PREFIXES)
-
-    # Simple transformations for collaborative feel
-    # (keep it simple - full NLP would be overkill)
-    conversational = question
-    conversational = conversational.replace("you trying", "we trying")
-    conversational = conversational.replace("you want", "we want")
-    conversational = conversational.replace("should we use", "would work best")
-
-    return f"{prefix}{conversational}"
-
 
 def speak_notification(tool_name: str):
     """Speak the permission notification using TTS."""
@@ -359,27 +225,6 @@ def speak_notification(tool_name: str):
         speak_mlx(message, voice=voice)
     else:
         log.info(f"TTS [Daniel] (MLX unavailable): {message}")
-        speak_say(message)
-
-
-def speak_interview_question(question: str):
-    """Speak an interview question using TTS with conversational framing.
-
-    Uses the active (main) voice, not the permission hook voice, since
-    interview questions are conversational content, not system notifications.
-    """
-    message = make_conversational_question(question)
-
-    if is_mlx_available():
-        try:
-            from tts_config import get_active_voice
-            voice = get_active_voice()
-        except ImportError:
-            voice = None
-        log.info(f"TTS (interview question) [{voice}]: {message}")
-        speak_mlx(message, voice=voice)
-    else:
-        log.info(f"TTS (interview question) [Daniel] (MLX unavailable): {message}")
         speak_say(message)
 
 
@@ -418,21 +263,11 @@ def main():
     except ImportError:
         pass  # tts_mute not available, continue normally
 
-    # Special handling for AskUserQuestion during interview/blitz sessions
-    # NOTE: This must happen BEFORE cooldown check - interview questions bypass cooldown
+    # Skip TTS for AskUserQuestion entirely
+    # Interview questions are voiced by the interview skill via /say invocations
+    # Non-interview AskUserQuestion is interactive and doesn't need TTS notification
     if tool_name == "AskUserQuestion":
-        in_interview = is_in_interview_session(transcript_path)
-        question_text = extract_question_text(tool_input)
-
-        if in_interview and question_text:
-            # Interview questions are ALWAYS voiced immediately - no cooldown/activity check
-            # This ensures users hear questions even when actively participating
-            log.info(f"Interview question (always voiced): {question_text[:50]}...")
-            speak_interview_question(question_text)
-        else:
-            # Non-interview AskUserQuestion - skip TTS (it's an interactive prompt)
-            log.info("AskUserQuestion outside interview context, skipping TTS")
-
+        log.info("AskUserQuestion tool, skipping TTS (skill handles interview voicing)")
         sys.exit(1)
 
     # Check cooldown (for non-interview permission notifications)
