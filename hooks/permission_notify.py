@@ -418,7 +418,24 @@ def main():
     except ImportError:
         pass  # tts_mute not available, continue normally
 
-    # Check cooldown
+    # Special handling for AskUserQuestion during interview/blitz sessions
+    # NOTE: This must happen BEFORE cooldown check - interview questions bypass cooldown
+    if tool_name == "AskUserQuestion":
+        in_interview = is_in_interview_session(transcript_path)
+        question_text = extract_question_text(tool_input)
+
+        if in_interview and question_text:
+            # Interview questions are ALWAYS voiced immediately - no cooldown/activity check
+            # This ensures users hear questions even when actively participating
+            log.info(f"Interview question (always voiced): {question_text[:50]}...")
+            speak_interview_question(question_text)
+        else:
+            # Non-interview AskUserQuestion - skip TTS (it's an interactive prompt)
+            log.info("AskUserQuestion outside interview context, skipping TTS")
+
+        sys.exit(1)
+
+    # Check cooldown (for non-interview permission notifications)
     if is_within_cooldown():
         log.info("Within cooldown period, skipping notification")
         sys.exit(1)
@@ -438,23 +455,6 @@ def main():
         time_since_user >= IDLE_THRESHOLD_SECS or
         tool_count >= MIN_AUTO_APPROVED_TOOLS
     )
-
-    # Special handling for AskUserQuestion during interview/blitz sessions
-    if tool_name == "AskUserQuestion":
-        in_interview = is_in_interview_session(transcript_path)
-        question_text = extract_question_text(tool_input)
-
-        if in_interview and question_text:
-            # Interview questions are ALWAYS voiced immediately - no cooldown/activity check
-            # This ensures users hear questions even when actively participating
-            log.info(f"Interview question (always voiced): {question_text[:50]}...")
-            record_notification()
-            speak_interview_question(question_text)
-        else:
-            # Non-interview AskUserQuestion - skip TTS (it's an interactive prompt)
-            log.info("AskUserQuestion outside interview context, skipping TTS")
-
-        sys.exit(1)
 
     # Standard permission notification for other tools
     if should_notify:
